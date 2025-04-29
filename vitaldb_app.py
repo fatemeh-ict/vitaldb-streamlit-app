@@ -117,6 +117,26 @@ class VitalDBAnalyzer:
         fig.update_layout(height=300 * len(self.variable_names), title=f"Signal Issues - Case {self.caseid}")
         st.plotly_chart(fig, use_container_width=True)
 
+# -------------------- Stats --------------------
+@st.cache_data
+def compute_global_stats(caseids, variable_names):
+    medians, mads = {}, {}
+    for var in variable_names:
+        values = []
+        for cid in caseids:
+            try:
+                data = vitaldb.load_case(cid, variable_names)
+                if data is not None:
+                    values.extend(data[:, variable_names.index(var)][~np.isnan(data[:, variable_names.index(var)])])
+            except:
+                continue
+        if values:
+            med = np.median(values)
+            mad = np.median(np.abs(values - med)) or 1e-6
+            medians[var] = med
+            mads[var] = mad
+    return medians, mads
+
 # -------------------- Interpolation --------------------
 def detect_gaps(signal):
     gaps = []
@@ -141,11 +161,9 @@ def classify_gaps(gaps):
     lengths = np.array([gap['length'] for gap in gaps])
     median_len = np.median(lengths)
     mad_len = np.median(np.abs(lengths - median_len)) or 1e-6
-    classified = []
     for gap in gaps:
         gap['type'] = 'long' if gap['length'] > median_len + 3.5 * mad_len else 'short'
-        classified.append(gap)
-    return classified
+    return gaps
 
 def select_interpolation_method(signal, global_std=10):
     clean = signal[~np.isnan(signal)]
@@ -165,7 +183,7 @@ def impute_signal(signal, gaps_classified, global_std):
     for gap in gaps_classified:
         start, end = gap['start'], gap['start'] + gap['length']
         if gap['type'] == 'short':
-            valid_idx = (~np.isnan(signal))
+            valid_idx = ~np.isnan(signal)
             if valid_idx.sum() < 2:
                 continue
             method = select_interpolation_method(signal, global_std)
@@ -182,16 +200,16 @@ def process_case_interpolation(caseid, variable_names, global_std):
     for var in variable_names:
         sig = df[var].values
         gaps = detect_gaps(sig)
-        cls = classify_gaps(gaps)
-        df_interp[var] = impute_signal(sig, cls, global_std)
+        classified = classify_gaps(gaps)
+        df_interp[var] = impute_signal(sig, classified, global_std)
     return df, df_interp
 
-def plot_before_after(df_raw, df_imputed, variable_names, caseid):
+def plot_before_after(df_raw, df_interp, variable_names, caseid):
     fig = make_subplots(rows=len(variable_names), cols=1, shared_xaxes=True, subplot_titles=variable_names)
     for i, var in enumerate(variable_names):
         x = np.arange(len(df_raw))
         fig.add_trace(go.Scatter(x=x, y=df_raw[var], mode='lines+markers', name=f"Raw {var}"), row=i+1, col=1)
-        fig.add_trace(go.Scatter(x=x, y=df_imputed[var], mode='lines', name=f"Imputed {var}"), row=i+1, col=1)
+        fig.add_trace(go.Scatter(x=x, y=df_interp[var], mode='lines', name=f"Imputed {var}"), row=i+1, col=1)
     fig.update_layout(height=300 * len(variable_names), title=f"Case {caseid} - Raw vs Imputed")
     st.plotly_chart(fig, use_container_width=True)
 
@@ -199,6 +217,7 @@ def plot_before_after(df_raw, df_imputed, variable_names, caseid):
 df_cases, df_trks, df_labs = load_data()
 filter_tab, analysis_tab, interp_tab = st.tabs(["Filter & Download", "Signal Analysis", "Interpolation"])
 
+# -------------------- Filter Tab --------------------
 with filter_tab:
     st.subheader("Step 1: Filter Dataset")
     ane_types_all = df_cases['ane_type'].dropna().unique().tolist()
@@ -210,54 +229,50 @@ with filter_tab:
     if st.button("Apply Filtering"):
         valid_caseids = flexible_case_selection(df_cases, df_trks, selected_ane_types, selected_drugs)
         if valid_caseids:
-            df_cases_filtered = df_cases[df_cases['caseid'].isin(valid_caseids)]
-            df_trks_filtered = df_trks[df_trks['caseid'].isin(valid_caseids)]
-            df_labs_filtered = df_labs[df_labs['caseid'].isin(valid_caseids)]
-
-            st.success(f"{len(valid_caseids)} valid cases found.")
-            st.download_button("Download Filtered Cases", df_cases_filtered.to_csv(index=False), "filtered_cases.csv")
-            st.download_button("Download Filtered Tracks", df_trks_filtered.to_csv(index=False), "filtered_trks.csv")
-            st.download_button("Download Filtered Labs", df_labs_filtered.to_csv(index=False), "filtered_labs.csv")
-
             st.session_state['filtered_ids'] = valid_caseids
-            if st.checkbox("Show Filtered Table"):
-                st.dataframe(df_cases_filtered.head())
+            st.success(f"{len(valid_caseids)} valid cases found.")
         else:
             st.warning("No valid cases found.")
 
+# -------------------- Signal Analysis Tab --------------------
 with analysis_tab:
     st.subheader("Step 2: Analyze Case")
-    variable_names = ["Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE", "BIS/BIS",
-                      "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP"]
-    filtered_ids = st.session_state.get("filtered_ids", [])
-    selected_caseid = st.selectbox("Select Case ID", filtered_ids if filtered_ids else ["No Data"])
+    if 'filtered_ids' not in st.session_state or not st.session_state['filtered_ids']:
+        st.warning("Please filter the cases in Step 1 before analysis.")
+    else:
+        variable_names = ["Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE", "BIS/BIS",
+                          "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP"]
+        filtered_ids = st.session_state['filtered_ids']
+        selected_caseid = st.selectbox("Select Case ID", filtered_ids)
+        if st.button("Run Analysis"):
+            with st.spinner("Analyzing..."):
+                data = vitaldb.load_case(selected_caseid, variable_names)
+                thresholds = {"missing": 0.05}
+                global_medians, global_mads = compute_global_stats(filtered_ids, variable_names)
+                analyzer = VitalDBAnalyzer(selected_caseid, data.copy(), variable_names,
+                                           thresholds, global_medians, global_mads)
+                analyzer.check_missing_data()
+                analyzer.check_outliers_custom()
+                analyzer.plot_issues()
+                for w in analyzer.warnings:
+                    st.warning(w)
 
-    if st.button("Run Analysis") and selected_caseid != "No Data":
-        with st.spinner("Analyzing..."):
-            data = vitaldb.load_case(selected_caseid, variable_names)
-            thresholds = {"missing": 0.05}
-            global_medians, global_mads = compute_global_stats(filtered_ids, variable_names)
-            analyzer = VitalDBAnalyzer(selected_caseid, data.copy(), variable_names,
-                                       thresholds, global_medians, global_mads)
-            analyzer.check_missing_data()
-            analyzer.check_outliers_custom()
-            analyzer.plot_issues()
-            for w in analyzer.warnings:
-                st.warning(w)
-
+# -------------------- Interpolation Tab --------------------
 with interp_tab:
     st.subheader("Step 3: Interpolation")
-    variable_names = ["Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE", "BIS/BIS",
-                      "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP"]
-    filtered_ids = st.session_state.get("filtered_ids", [])
-    selected_caseid = st.selectbox("Select Case ID for Interpolation", filtered_ids if filtered_ids else ["No Data"])
-
-    if st.button("Run Interpolation") and selected_caseid != "No Data":
-        with st.spinner("Interpolating and plotting..."):
-            global_std = 10
-            df_raw, df_interp = process_case_interpolation(selected_caseid, variable_names, global_std)
-            if df_raw is not None:
-                plot_before_after(df_raw, df_interp, variable_names, selected_caseid)
-                st.success("Interpolation complete.")
-            else:
-                st.error("Failed to load the selected case.")
+    if 'filtered_ids' not in st.session_state or not st.session_state['filtered_ids']:
+        st.warning("Please filter the cases in Step 1 before interpolation.")
+    else:
+        variable_names = ["Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE", "BIS/BIS",
+                          "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP"]
+        filtered_ids = st.session_state['filtered_ids']
+        selected_caseid = st.selectbox("Select Case ID for Interpolation", filtered_ids)
+        if st.button("Run Interpolation"):
+            with st.spinner("Interpolating and plotting..."):
+                global_std = 10
+                df_raw, df_interp = process_case_interpolation(selected_caseid, variable_names, global_std)
+                if df_raw is not None:
+                    plot_before_after(df_raw, df_interp, variable_names, selected_caseid)
+                    st.success("Interpolation complete.")
+                else:
+                    st.error("Failed to load the selected case.")
