@@ -1,4 +1,4 @@
-# VitalDB Streamlit Analyzer with Advanced Visualization for Filtered Case IDs
+# VitalDB Streamlit Analyzer - Final Professional Version
 
 import streamlit as st
 import pandas as pd
@@ -8,11 +8,10 @@ from plotly.subplots import make_subplots
 import vitaldb
 
 st.set_page_config(layout="wide")
-st.title("VitalDB Analyzer with Outlier & NaN Visualization")
+st.title("VitalDB Analyzer with Outlier & NaN Detection")
 
 # -------------------- Load Data --------------------
 @st.cache_data
-
 def load_data():
     df_cases = pd.read_csv("https://api.vitaldb.net/cases")
     df_trks = pd.read_csv("https://api.vitaldb.net/trks")
@@ -34,22 +33,19 @@ def flexible_case_selection(df_cases, df_trks, ane_types, exclude_drugs):
     def match_group(group):
         ids = set(filtered_cases['caseid'])
         for sig in group:
-            sig_cases = set(df_trks[df_trks['tname'] == sig]['caseid'])
-            ids = ids.intersection(sig_cases)
+            ids &= set(df_trks[df_trks['tname'] == sig]['caseid'])
         return ids
 
-    ids_group1 = match_group(group1)
-    ids_group2 = match_group(group2)
-    valid_caseids = ids_group1.union(ids_group2)
+    valid_caseids = match_group(group1).union(match_group(group2))
 
     if exclude_drugs:
         drug_cols = [col for col in exclude_drugs if col in filtered_cases.columns]
         filtered_cases = filtered_cases[~filtered_cases[drug_cols].gt(0).any(axis=1)]
-        valid_caseids = valid_caseids.intersection(set(filtered_cases['caseid']))
+        valid_caseids &= set(filtered_cases['caseid'])
 
     return list(valid_caseids)
 
-# -------------------- Analyzer --------------------
+# -------------------- Analyzer Class --------------------
 class VitalDBAnalyzer:
     def __init__(self, caseid, data, variable_names, thresholds, global_medians, global_mads):
         self.caseid = caseid
@@ -84,8 +80,7 @@ class VitalDBAnalyzer:
                 if var in self.global_medians:
                     median = self.global_medians[var]
                     mad = self.global_mads[var] or 1e-6
-                    mad_idx = np.where(np.abs(signal - median) > 3.5 * mad)[0]
-                    idx.extend(mad_idx.tolist())
+                    idx.extend(np.where(np.abs(signal - median) > 3.5 * mad)[0].tolist())
                 idx = sorted(set(idx))
             else:
                 if var in self.global_medians:
@@ -94,7 +89,6 @@ class VitalDBAnalyzer:
                     idx = np.where(np.abs(signal - median) > 3.5 * mad)[0]
                 else:
                     continue
-
             self.issues[var]['outlier'] = idx
             self.issues[var]['outlier_values'] = original[idx].tolist()
             signal[idx] = np.nan
@@ -109,7 +103,8 @@ class VitalDBAnalyzer:
         for i, var in enumerate(self.variable_names):
             row = i + 1
             signal = df[var]
-            fig.add_trace(go.Scatter(x=df['time'], y=signal, mode='lines', name=var), row=row, col=1)
+            mode = 'markers+lines' if np.count_nonzero(~np.isnan(signal)) > 20 else 'markers'
+            fig.add_trace(go.Scatter(x=df['time'], y=signal, mode=mode, name=var), row=row, col=1)
             if self.issues[var]['outlier']:
                 x = [df['time'][j] for j in self.issues[var]['outlier']]
                 y = self.issues[var]['outlier_values']
@@ -120,13 +115,11 @@ class VitalDBAnalyzer:
                 y_nan = [signal.min() - 5] * len(x_nan)
                 fig.add_trace(go.Scatter(x=x_nan, y=y_nan, mode='markers', name=f"NaNs {var}",
                                          marker=dict(color='gray', size=5, symbol='line-ns-open')), row=row, col=1)
-
-        fig.update_layout(height=280 * len(self.variable_names), title=f"Signal Issues - Case {self.caseid}")
+        fig.update_layout(height=300 * len(self.variable_names), title=f"Signal Issues - Case {self.caseid}")
         st.plotly_chart(fig, use_container_width=True)
 
-# -------------------- Global Stats --------------------
+# -------------------- Stats --------------------
 @st.cache_data
-
 def compute_global_stats(caseids, variable_names):
     medians, mads = {}, {}
     for var in variable_names:
@@ -135,8 +128,7 @@ def compute_global_stats(caseids, variable_names):
             try:
                 data = vitaldb.load_case(cid, variable_names)
                 if data is not None:
-                    signal = data[:, variable_names.index(var)]
-                    values.extend(signal[~np.isnan(signal)])
+                    values.extend(data[:, variable_names.index(var)][~np.isnan(data[:, variable_names.index(var)])])
             except:
                 continue
         if values:
@@ -146,17 +138,17 @@ def compute_global_stats(caseids, variable_names):
             mads[var] = mad
     return medians, mads
 
-# -------------------- UI --------------------
+# -------------------- Streamlit UI --------------------
 df_cases, df_trks, df_labs = load_data()
 filter_tab, analysis_tab = st.tabs(["Filter & Download", "Signal Analysis"])
 
 with filter_tab:
     st.subheader("Step 1: Filter Dataset")
     ane_types_all = df_cases['ane_type'].dropna().unique().tolist()
-    selected_ane_types = st.multiselect("Select Anesthesia Types", ane_types_all, default=["General"])
-    potential_drugs = ['intraop_mdz', 'intraop_ftn', 'intraop_epi', 'intraop_phe', 'intraop_eph']
-    existing_drugs = [col for col in potential_drugs if col in df_cases.columns]
-    selected_drugs = st.multiselect("Select Drugs to Exclude", existing_drugs, default=existing_drugs)
+    selected_ane_types = st.multiselect("Anesthesia Types", ane_types_all, default=["General"])
+    drugs = ['intraop_mdz', 'intraop_ftn', 'intraop_epi', 'intraop_phe', 'intraop_eph']
+    existing_drugs = [d for d in drugs if d in df_cases.columns]
+    selected_drugs = st.multiselect("Drugs to Exclude", existing_drugs, default=existing_drugs)
 
     if st.button("Apply Filtering"):
         valid_caseids = flexible_case_selection(df_cases, df_trks, selected_ane_types, selected_drugs)
@@ -170,24 +162,24 @@ with filter_tab:
             st.download_button("Download Filtered Tracks", df_trks_filtered.to_csv(index=False), "filtered_trks.csv")
             st.download_button("Download Filtered Labs", df_labs_filtered.to_csv(index=False), "filtered_labs.csv")
 
-            st.session_state["filtered_ids"] = valid_caseids
+            st.session_state['filtered_ids'] = valid_caseids
             if st.checkbox("Show Filtered Table"):
                 st.dataframe(df_cases_filtered.head())
         else:
-            st.warning("No cases found matching criteria.")
+            st.warning("No valid cases found.")
 
 with analysis_tab:
-    st.subheader("Step 2: Analyze Selected Filtered Case")
+    st.subheader("Step 2: Analyze Case")
     variable_names = ["Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE", "BIS/BIS",
                       "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP"]
     filtered_ids = st.session_state.get("filtered_ids", [])
-    selected_caseid = st.selectbox("Select Filtered Case ID", filtered_ids if filtered_ids else ["No Data"])
+    selected_caseid = st.selectbox("Select Case ID", filtered_ids if filtered_ids else ["No Data"])
 
-    if st.button("Analyze Selected Case") and selected_caseid != "No Data":
+    if st.button("Run Analysis") and selected_caseid != "No Data":
         with st.spinner("Analyzing..."):
             data = vitaldb.load_case(selected_caseid, variable_names)
             thresholds = {"missing": 0.05}
-            global_medians, global_mads = compute_global_stats(filtered_ids[:10], variable_names)
+            global_medians, global_mads = compute_global_stats(filtered_ids, variable_names)
             analyzer = VitalDBAnalyzer(selected_caseid, data.copy(), variable_names,
                                        thresholds, global_medians, global_mads)
             analyzer.check_missing_data()
