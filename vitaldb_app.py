@@ -12,25 +12,40 @@ def load_data():
     return df_cases, df_trks, df_labs
 
 # ------------------------------
-# Filtering Functions
-def filter_cases(df_cases, df_trks, ane_types, required_signals, exclude_drugs):
-    # Filter by anesthesia type
+def flexible_case_selection(df_cases, df_trks, ane_types, exclude_drugs):
+    group1 = [
+        "Solar8000/NIBP_DBP", "Solar8000/NIBP_SBP", "BIS/BIS",
+        "Orchestra/PPF20_CE", "Orchestra/RFTN20_CE",
+        "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE"
+    ]
+
+    group2 = [
+        "Solar8000/NIBP_DBP", "Solar8000/NIBP_SBP", "BIS/BIS",
+        "Orchestra/PPF20_CE", "Orchestra/RFTN50_CE",
+        "Orchestra/PPF20_RATE", "Orchestra/RFTN50_RATE"
+    ]
+
     filtered_cases = df_cases[df_cases['ane_type'].isin(ane_types)]
     valid_caseids = set(filtered_cases['caseid'])
 
-    # Filter by required signals
-    if required_signals:
-        for signal in required_signals:
-            cases_with_signal = set(df_trks[df_trks['tname'] == signal]['caseid'])
-            valid_caseids = valid_caseids.intersection(cases_with_signal)
+    def match_group(group):
+        ids = set(filtered_cases['caseid'])
+        for sig in group:
+            sig_cases = set(df_trks[df_trks['tname'] == sig]['caseid'])
+            ids = ids.intersection(sig_cases)
+        return ids
 
-    # Exclude by intraoperative drugs
+    ids_group1 = match_group(group1)
+    ids_group2 = match_group(group2)
+    valid_caseids = ids_group1.union(ids_group2)
+
     if exclude_drugs:
         drug_cols = [col for col in exclude_drugs if col in filtered_cases.columns]
         filtered_cases = filtered_cases[~filtered_cases[drug_cols].gt(0).any(axis=1)]
         valid_caseids = valid_caseids.intersection(set(filtered_cases['caseid']))
 
     return list(valid_caseids)
+
 
 # ------------------------------
 # Streamlit App
@@ -68,7 +83,7 @@ selected_drugs = st.sidebar.multiselect("Select Drugs to Exclude", existing_drug
 # Apply Filter Button
 if st.sidebar.button("Apply Filtering"):
     # Apply filtering based on selections
-    valid_caseids = filter_cases(df_cases, df_trks, selected_ane_types, selected_signals, selected_drugs)
+    valid_caseids = flexible_case_selection(df_cases, df_trks, selected_ane_types, selected_drugs)
 
     if valid_caseids:
         df_cases_filtered = df_cases[df_cases['caseid'].isin(valid_caseids)]
