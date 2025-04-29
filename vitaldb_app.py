@@ -52,7 +52,7 @@ class VitalDBAnalyzer:
         self.thresholds = thresholds
         self.global_medians = global_medians
         self.global_mads = global_mads
-        self.issues = {var: {'outlier': [], 'outlier_values': [], 'nan': []} for var in variable_names]
+        self.issues = {var: {'outlier': [], 'outlier_values': [], 'nan': []} for var in variable_names}
 
     def check_outliers_and_nan(self):
         for i, var in enumerate(self.variable_names):
