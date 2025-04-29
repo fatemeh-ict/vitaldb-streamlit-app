@@ -72,21 +72,46 @@ class VitalDBAnalyzer:
         df = pd.DataFrame(self.data, columns=self.variable_names)
         df['time'] = np.arange(len(df))
         fig = make_subplots(rows=len(self.variable_names), cols=1, shared_xaxes=True,
-                            subplot_titles=self.variable_names)
-        for i, var in enumerate(self.variable_names):
-            fig.add_trace(go.Scatter(x=df['time'], y=df[var], mode='lines', name=var), row=i+1, col=1)
-            if self.issues[var]['outlier']:
-                x = [df['time'][j] for j in self.issues[var]['outlier']]
-                y = self.issues[var]['outlier_values']
-                fig.add_trace(go.Scatter(x=x, y=y, mode='markers', name=f"Outliers: {var}",
-                                         marker=dict(color='red', size=6)), row=i+1, col=1)
-            if self.issues[var]['nan']:
-                x_nan = [df['time'][j] for j in self.issues[var]['nan']]
-                y_nan = [df[var].min() - 5] * len(x_nan)
-                fig.add_trace(go.Scatter(x=x_nan, y=y_nan, mode='markers', name=f"NaNs: {var}",
-                                         marker=dict(color='gray', size=5, symbol='x')), row=i+1, col=1)
+                            vertical_spacing=0.05, subplot_titles=self.variable_names)
+        shown_legend = {"outlier": False, "nan": False}
 
-        fig.update_layout(height=250 * len(self.variable_names), title=f"Case {self.caseid} Signal Quality")
+        for i, var in enumerate(self.variable_names):
+            signal = df[var].copy()
+            time = df['time']
+            row = i + 1
+
+            if np.count_nonzero(~np.isnan(signal)) < 5:
+                st.warning(f"Skipping {var} – not enough valid data.")
+                continue
+
+            fig.add_trace(go.Scatter(x=time, y=signal, mode='lines+markers', name=var), row=row, col=1)
+
+            if self.issues[var]['outlier']:
+                outlier_x = [time[idx] for idx in self.issues[var]['outlier']]
+                outlier_y = self.issues[var]['outlier_values']
+                fig.add_trace(go.Scatter(
+                    x=outlier_x, y=outlier_y, mode='markers',
+                    name="Outliers" if not shown_legend['outlier'] else None,
+                    showlegend=not shown_legend['outlier'],
+                    marker=dict(color='purple', size=6, symbol='star')
+                ), row=row, col=1)
+                shown_legend['outlier'] = True
+
+            if self.issues[var]['nan']:
+                nan_x = [time[idx] for idx in self.issues[var]['nan']]
+                nan_y = [signal.min() - 5] * len(nan_x)
+                fig.add_trace(go.Scatter(
+                    x=nan_x, y=nan_y, mode='markers',
+                    name="NaN" if not shown_legend["nan"] else None,
+                    showlegend=not shown_legend["nan"],
+                    marker=dict(color='gray', size=5, symbol='line-ns-open')
+                ), row=row, col=1)
+                shown_legend["nan"] = True
+
+            fig.update_yaxes(title_text=var, row=row, col=1)
+            fig.update_xaxes(title_text='Time (s)', row=row, col=1)
+
+        fig.update_layout(title=f"Signal with Issues - Case {self.caseid}", height=250 * len(self.variable_names))
         st.plotly_chart(fig, use_container_width=True)
 
 @st.cache_data
