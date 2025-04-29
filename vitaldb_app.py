@@ -1,3 +1,5 @@
+# VitalDB Streamlit Analyzer with Custom Outlier and NaN Checks
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -6,8 +8,9 @@ from plotly.subplots import make_subplots
 import vitaldb
 
 st.set_page_config(layout="wide")
-st.title("VitalDB Analyzer")
+st.title("VitalDB Analyzer with Advanced Outlier Detection")
 
+# ---------------------------------------------------------
 @st.cache_data
 def load_data():
     df_cases = pd.read_csv("https://api.vitaldb.net/cases")
@@ -15,6 +18,7 @@ def load_data():
     df_labs = pd.read_csv("https://api.vitaldb.net/labs")
     return df_cases, df_trks, df_labs
 
+# ---------------------------------------------------------
 def flexible_case_selection(df_cases, df_trks, ane_types, exclude_drugs):
     group1 = ["Solar8000/NIBP_DBP", "Solar8000/NIBP_SBP", "BIS/BIS",
               "Orchestra/PPF20_CE", "Orchestra/RFTN20_CE",
@@ -44,6 +48,7 @@ def flexible_case_selection(df_cases, df_trks, ane_types, exclude_drugs):
 
     return list(valid_caseids)
 
+# ---------------------------------------------------------
 class VitalDBAnalyzer:
     def __init__(self, caseid, data, variable_names, thresholds, global_medians, global_mads):
         self.caseid = caseid
@@ -53,71 +58,79 @@ class VitalDBAnalyzer:
         self.global_medians = global_medians
         self.global_mads = global_mads
         self.issues = {var: {'outlier': [], 'outlier_values': [], 'nan': []} for var in variable_names}
+        self.warnings = []
 
-    def check_outliers_and_nan(self):
+    def _loop_signals(self):
         for i, var in enumerate(self.variable_names):
-            signal = self.data[:, i]
-            original = signal.copy()
+            yield i, var, self.data[:, i]
+
+    def check_missing_data(self):
+        for i, var, signal in self._loop_signals():
             nan_idx = np.where(np.isnan(signal))[0]
             self.issues[var]['nan'] = nan_idx.tolist()
-            if var in self.global_medians:
-                median = self.global_medians[var]
-                mad = self.global_mads[var] or 1e-6
-                outlier_idx = np.where(np.abs(signal - median) > 3.5 * mad)[0]
-                self.issues[var]['outlier'] = outlier_idx.tolist()
-                self.issues[var]['outlier_values'] = original[outlier_idx].tolist()
-                signal[outlier_idx] = np.nan
+            if len(nan_idx) / len(signal) > self.thresholds['missing']:
+                self.warnings.append(f"[{self.caseid}] [{var}] > {self.thresholds['missing']*100:.0f}% missing data.")
+
+    def check_outliers_custom(self):
+        for i, var, signal in self._loop_signals():
+            original_values = signal.copy()
+
+            if "RATE" in var:
+                neg_idx = np.where(signal < 0)[0]
+                self.issues[var]['outlier'] = neg_idx.tolist()
+                self.issues[var]['outlier_values'] = original_values[neg_idx].tolist()
+                signal[neg_idx] = np.nan
+                if len(neg_idx):
+                    self.warnings.append(f"[{self.caseid}] [{var}] {len(neg_idx)} negative rates (converted to NaN).")
+
+            elif "BIS" in var:
+                invalid_idx = np.where((signal <= 0) | (signal > 100))[0]
+                self.issues[var]['outlier'] = invalid_idx.tolist()
+                self.issues[var]['outlier_values'] = original_values[invalid_idx].tolist()
+                signal[invalid_idx] = np.nan
+                if len(invalid_idx):
+                    self.warnings.append(f"[{self.caseid}] [{var}] {len(invalid_idx)} invalid BIS values.")
+
+            elif "NIBP" in var:
+                all_outliers = list(np.where(signal <= 0)[0])
+                if var in self.global_medians:
+                    median = self.global_medians[var]
+                    mad = self.global_mads[var] or 1e-6
+                    mad_idx = np.where(np.abs(signal - median) > 3.5 * mad)[0]
+                    all_outliers.extend(mad_idx.tolist())
+                all_outliers = sorted(set(all_outliers))
+                self.issues[var]['outlier'] = all_outliers
+                self.issues[var]['outlier_values'] = original_values[all_outliers].tolist()
+                signal[all_outliers] = np.nan
+                if all_outliers:
+                    self.warnings.append(f"[{self.caseid}] [{var}] {len(all_outliers)} total BP outliers.")
 
     def plot_issues(self):
         df = pd.DataFrame(self.data, columns=self.variable_names)
         df['time'] = np.arange(len(df))
         fig = make_subplots(rows=len(self.variable_names), cols=1, shared_xaxes=True,
-                            vertical_spacing=0.05, subplot_titles=self.variable_names)
-        shown_legend = {"outlier": False, "nan": False}
-
+                            subplot_titles=self.variable_names)
         for i, var in enumerate(self.variable_names):
-            signal = df[var].copy()
-            time = df['time']
             row = i + 1
-
-            if np.count_nonzero(~np.isnan(signal)) < 5:
-                st.warning(f"Skipping {var} – not enough valid data.")
-                continue
-
-            fig.add_trace(go.Scatter(x=time, y=signal, mode='lines+markers', name=var), row=row, col=1)
-
+            fig.add_trace(go.Scatter(x=df['time'], y=df[var], mode='lines', name=var), row=row, col=1)
             if self.issues[var]['outlier']:
-                outlier_x = [time[idx] for idx in self.issues[var]['outlier']]
-                outlier_y = self.issues[var]['outlier_values']
-                fig.add_trace(go.Scatter(
-                    x=outlier_x, y=outlier_y, mode='markers',
-                    name="Outliers" if not shown_legend['outlier'] else None,
-                    showlegend=not shown_legend['outlier'],
-                    marker=dict(color='purple', size=6, symbol='star')
-                ), row=row, col=1)
-                shown_legend['outlier'] = True
-
+                x = [df['time'][j] for j in self.issues[var]['outlier']]
+                y = self.issues[var]['outlier_values']
+                fig.add_trace(go.Scatter(x=x, y=y, mode='markers', name=f"Outliers {var}",
+                                         marker=dict(color='red', size=6, symbol='star')), row=row, col=1)
             if self.issues[var]['nan']:
-                nan_x = [time[idx] for idx in self.issues[var]['nan']]
-                nan_y = [signal.min() - 5] * len(nan_x)
-                fig.add_trace(go.Scatter(
-                    x=nan_x, y=nan_y, mode='markers',
-                    name="NaN" if not shown_legend["nan"] else None,
-                    showlegend=not shown_legend["nan"],
-                    marker=dict(color='gray', size=5, symbol='line-ns-open')
-                ), row=row, col=1)
-                shown_legend["nan"] = True
+                x_nan = [df['time'][j] for j in self.issues[var]['nan']]
+                y_nan = [df[var].min() - 5] * len(x_nan)
+                fig.add_trace(go.Scatter(x=x_nan, y=y_nan, mode='markers', name=f"NaNs {var}",
+                                         marker=dict(color='gray', size=5, symbol='line-ns-open')), row=row, col=1)
 
-            fig.update_yaxes(title_text=var, row=row, col=1)
-            fig.update_xaxes(title_text='Time (s)', row=row, col=1)
-
-        fig.update_layout(title=f"Signal with Issues - Case {self.caseid}", height=250 * len(self.variable_names))
+        fig.update_layout(height=280 * len(self.variable_names), title=f"Signal Issues - Case {self.caseid}")
         st.plotly_chart(fig, use_container_width=True)
 
+# ---------------------------------------------------------
 @st.cache_data
 def compute_global_stats(caseids, variable_names):
-    medians = {}
-    mads = {}
+    medians, mads = {}, {}
     for var in variable_names:
         all_vals = []
         for cid in caseids:
@@ -135,11 +148,10 @@ def compute_global_stats(caseids, variable_names):
             mads[var] = mad
     return medians, mads
 
-# -------------------------
+# ---------------------------------------------------------
 df_cases, df_trks, df_labs = load_data()
 
-# Tabs
-filter_tab, analysis_tab = st.tabs([" Filter & Download", " Signal Analysis"])
+filter_tab, analysis_tab = st.tabs(["Filter & Download", "Signal Analysis"])
 
 with filter_tab:
     st.subheader("Step 1: Filter Dataset")
@@ -176,8 +188,12 @@ with analysis_tab:
     if st.button("Analyze Selected Case"):
         with st.spinner("Analyzing..."):
             data = vitaldb.load_case(selected_caseid, variable_names)
+            thresholds = {"missing": 0.05}
             global_medians, global_mads = compute_global_stats(selected_caseids[:10], variable_names)
             analyzer = VitalDBAnalyzer(selected_caseid, data.copy(), variable_names,
-                                       thresholds={}, global_medians=global_medians, global_mads=global_mads)
-            analyzer.check_outliers_and_nan()
+                                       thresholds=thresholds, global_medians=global_medians, global_mads=global_mads)
+            analyzer.check_missing_data()
+            analyzer.check_outliers_custom()
             analyzer.plot_issues()
+            for w in analyzer.warnings:
+                st.warning(w)
