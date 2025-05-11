@@ -1,4 +1,4 @@
-# VitalDB Professional Streamlit GUI - Analyzer & Interpolator
+# VitalDB Professional Streamlit GUI - Optimized Analyzer & Interpolator
 
 import streamlit as st
 import pandas as pd
@@ -57,22 +57,41 @@ st.success(f"✅ {len(valid_ids)} valid case(s) found.")
 
 selected_caseid = st.selectbox("📦 Choose a CaseID to Analyze", valid_ids)
 
-# ------------------ Analysis & Interpolation ------------------
-def compute_stats(data, variable_names):
-    medians, mads = {}, {}
-    for i, var in enumerate(variable_names):
-        sig = data[:, i]
-        clean = sig[~np.isnan(sig)]
-        medians[var] = np.median(clean)
-        mads[var] = np.median(np.abs(clean - medians[var])) or 1e-6
+# ------------------ Global Stats (One-time Computation) ------------------
+@st.cache_data
+def compute_global_stats(case_ids, variable_names):
+    medians = {}
+    mads = {}
+    for var in variable_names:
+        values = []
+        for cid in case_ids:
+            try:
+                data = vitaldb.load_case(cid, variable_names)
+                sig = data[:, variable_names.index(var)]
+                values.extend(sig[~np.isnan(sig)])
+            except:
+                continue
+        values = np.array(values)
+        if len(values) > 0:
+            medians[var] = np.median(values)
+            mads[var] = np.median(np.abs(values - medians[var])) or 1e-6
     return medians, mads
 
+if "global_medians" not in st.session_state or "global_mads" not in st.session_state:
+    with st.spinner("Computing global stats (only once)..."):
+        medians, mads = compute_global_stats(valid_ids, variable_names)
+        st.session_state["global_medians"] = medians
+        st.session_state["global_mads"] = mads
+
+# ------------------ Analysis & Interpolation ------------------
 def analyze_and_plot(caseid, variable_names):
     data = vitaldb.load_case(caseid, variable_names)
     df = pd.DataFrame(data, columns=variable_names)
     df['time'] = np.arange(len(df))
 
-    medians, mads = compute_stats(data, variable_names)
+    medians = st.session_state["global_medians"]
+    mads = st.session_state["global_mads"]
+
     fig = make_subplots(rows=len(variable_names), cols=1, shared_xaxes=True, subplot_titles=variable_names)
 
     for i, var in enumerate(variable_names):
