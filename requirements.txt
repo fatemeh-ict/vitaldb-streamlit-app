@@ -3,4 +3,7 @@ pandas
 plotly
 numpy
 vitaldb
+matplotlib
+scipy
+seaborn
 
