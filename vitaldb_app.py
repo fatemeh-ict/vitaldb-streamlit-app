@@ -124,8 +124,12 @@ def load_data():
 df_cases, df_trks = load_data()
 
 signal_options = sorted(df_trks['tname'].value_counts().index.tolist())
-selected_signals = st.sidebar.multiselect("Select Signals", signal_options[:100],
-                                          default=["BIS/BIS", "Solar8000/NIBP_SBP"])
+default_signals = ["BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP", "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE"]
+
+valid_defaults = [sig for sig in default_signals if sig in signal_options[:100]]
+
+selected_signals = st.sidebar.multiselect("Select Signals", signal_options[:100], default=valid_defaults)
+
 selected_drugs = st.sidebar.multiselect("Exclude cases with drugs", ["intraop_mdz", "intraop_ftn"])
 
 if st.sidebar.button("🔍 Filter Cases"):
