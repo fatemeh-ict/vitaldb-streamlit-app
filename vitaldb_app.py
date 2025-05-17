@@ -295,12 +295,12 @@ selected_signals = st.sidebar.multiselect("Select Required Signals", signal_opti
 drug_vars = ["intraop_mdz", "intraop_ftn", "intraop_epi", "intraop_phe", "intraop_eph"]
 selected_drugs = st.sidebar.multiselect("Exclude Cases With Drugs", drug_vars, default=["intraop_mdz", "intraop_ftn"])
 
-optypes = sorted(df_cases['ane_type'].dropna().unique())
-selected_optypes = st.sidebar.multiselect("Select Surgery Types (optype)", optypes)
+ane_types = sorted(df_cases['ane_type'].dropna().unique())
+selected_ane_types = st.sidebar.multiselect("Select Surgery Types (ane_type)", ane_type)
 
 if st.sidebar.button("🔍 Filter Valid Cases"):
     selector = CaseSelector(df_cases, df_trks, required_variables=selected_signals,
-                            intraoperative_boluses=selected_drugs, optype_filter=selected_optypes)
+                            intraoperative_boluses=selected_drugs, optype_filter=selected_ane_types)
     valid_ids, filtered_df = selector.select_valid_cases()
     st.session_state.valid_ids = valid_ids
     st.session_state.filtered_df = filtered_df
