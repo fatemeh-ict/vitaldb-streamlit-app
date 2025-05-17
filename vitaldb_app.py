@@ -1,8 +1,9 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import vitaldb 
+from vitaldb import load_case
 import plotly.graph_objects as go
+import plotly.subplots as sp
 
 # =============================
 # Class: CaseSelector
@@ -34,12 +35,11 @@ class CaseSelector:
 # Class: SignalAnalyzer
 # =============================
 class SignalAnalyzer:
-    def __init__(self, caseid, data, variable_names, thresholds=None, plot=True, global_medians=None, global_mads=None):
+    def __init__(self, caseid, data, variable_names, thresholds=None, global_medians=None, global_mads=None):
         self.caseid = caseid
         self.data = data
         self.variable_names = variable_names
         self.thresholds = thresholds or {"missing": 0.05, "gap": 30, "jump": 100}
-        self.plot_enabled = plot
         self.global_medians = global_medians or {}
         self.global_mads = global_mads or {}
         self.issues = {var: {'nan': [], 'gap': [], 'outlier': [], 'outlier_values': [], 'jump': []} for var in variable_names}
@@ -49,11 +49,9 @@ class SignalAnalyzer:
             signal = self.data[:, i]
             original = signal.copy()
 
-            # NaN detection
             nan_idx = np.where(np.isnan(signal))[0]
             self.issues[var]['nan'] = nan_idx.tolist()
 
-            # Gap detection
             gap_list = []
             is_gap = False
             start_idx = 0
@@ -72,7 +70,6 @@ class SignalAnalyzer:
                 gap_list.append({"start": start_idx, "length": gap_len})
             self.issues[var]['gap'] = gap_list
 
-            # Outlier detection
             outliers = []
             if "RATE" in var:
                 outliers = np.where(signal < 0)[0].tolist()
@@ -89,7 +86,6 @@ class SignalAnalyzer:
             self.issues[var]['outlier'] = sorted(set(outliers))
             self.issues[var]['outlier_values'] = original[self.issues[var]['outlier']].tolist()
 
-            # Jump detection
             diffs = np.diff(signal)
             if len(diffs) > 0:
                 median_diff = np.median(diffs)
@@ -97,8 +93,7 @@ class SignalAnalyzer:
                 jump_idx = np.where(np.abs(diffs - median_diff) > 3.5 * mad_diff)[0]
                 self.issues[var]['jump'] = jump_idx.tolist()
 
-    def plot(self, signal_units=None):
-        import plotly.subplots as sp
+    def plot(self):
         fig = sp.make_subplots(rows=len(self.variable_names), cols=1, shared_xaxes=True,
                                subplot_titles=self.variable_names, vertical_spacing=0.05)
         time = np.arange(self.data.shape[0])
@@ -117,9 +112,16 @@ class SignalAnalyzer:
 # =============================
 # Streamlit App Logic
 # =============================
-st.sidebar.header("📁 Case Configuration")
-df_cases = pd.read_csv("https://api.vitaldb.net/cases")
-df_trks = pd.read_csv("https://api.vitaldb.net/trks")
+st.set_page_config(page_title="VitalDB Analyzer", layout="wide")
+st.title("📊 VitalDB Case Analyzer")
+
+@st.cache_data
+def load_data():
+    df_cases = pd.read_csv("https://api.vitaldb.net/cases")
+    df_trks = pd.read_csv("https://api.vitaldb.net/trks")
+    return df_cases, df_trks
+
+df_cases, df_trks = load_data()
 
 signal_options = sorted(df_trks['tname'].value_counts().index.tolist())
 selected_signals = st.sidebar.multiselect("Select Signals", signal_options[:100],
@@ -145,7 +147,7 @@ if 'valid_ids' in st.session_state:
                 mads = {v: np.nanmedian(np.abs(data[:, i] - medians[v])) or 1e-6 for i, v in enumerate(selected_signals)}
 
                 analyzer = SignalAnalyzer(caseid=cid, data=data, variable_names=selected_signals,
-                                          global_medians=medians, global_mads=mads, plot=False)
+                                          global_medians=medians, global_mads=mads)
                 analyzer.analyze()
 
                 st.subheader(f"📋 Stats for Case {cid}")
@@ -159,4 +161,4 @@ if 'valid_ids' in st.session_state:
                     st.plotly_chart(fig, use_container_width=True)
 
             except Exception as e:
-                st.error(f"Error processing case {cid}: {e}")
+                st.error(f"❌ Error processing case {cid}: {e}")
