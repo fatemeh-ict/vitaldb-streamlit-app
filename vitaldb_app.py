@@ -296,7 +296,7 @@ drug_vars = ["intraop_mdz", "intraop_ftn", "intraop_epi", "intraop_phe", "intrao
 selected_drugs = st.sidebar.multiselect("Exclude Cases With Drugs", drug_vars, default=["intraop_mdz", "intraop_ftn"])
 
 ane_types = sorted(df_cases['ane_type'].dropna().unique())
-selected_ane_types = st.sidebar.multiselect("Select Surgery Types (ane_type)", ane_type)
+selected_ane_types = st.sidebar.multiselect("Select Surgery Types (ane_type)", ane_types)
 
 if st.sidebar.button("🔍 Filter Valid Cases"):
     selector = CaseSelector(df_cases, df_trks, required_variables=selected_signals,
