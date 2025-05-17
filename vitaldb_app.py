@@ -2,14 +2,13 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 from vitaldb import load_case
-import plotly.graph_objects as go
-from src.analyzer import SignalAnalyzer, SignalProcessor, Evaluator
-from src.selector import CaseSelector
+from analyzer import SignalAnalyzer, SignalProcessor, Evaluator
+from selector import CaseSelector
 
-st.set_page_config(layout="wide", page_title="VitalDB Analyzer")
-st.title("🧠 VitalDB Signal Quality & Preprocessing Dashboard")
+st.set_page_config(layout="wide", page_title="VitalDB Signal Analyzer")
+st.title("📊 VitalDB Signal Analyzer with Plotly")
 
-# ---- Section 1: Load Metadata from VitalDB
+# ---- 1. Load Metadata
 @st.cache_data
 def load_metadata():
     df_cases = pd.read_csv("https://api.vitaldb.net/cases")
@@ -17,96 +16,88 @@ def load_metadata():
     return df_cases, df_trks
 
 df_cases, df_trks = load_metadata()
-st.success("✅ Metadata loaded successfully.")
+st.success("✅ Metadata loaded from VitalDB.")
 
-# ---- Section 2: User selects signals and filtering
-st.sidebar.header("🔧 Configuration")
+# ---- 2. Sidebar Configuration
+st.sidebar.header("⚙️ Filter Settings")
 
-# Signal choices
-all_signals = sorted(df_trks['tname'].value_counts().index.to_list())
-selected_signals = st.sidebar.multiselect("Select signal variables", all_signals[:200], default=[
-    "BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP",
-    "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE"
-])
+signal_options = sorted(df_trks['tname'].value_counts().index.tolist())
+selected_signals = st.sidebar.multiselect(
+    "Select Signal Variables", signal_options[:200],
+    default=["BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP", "Orchestra/PPF20_RATE"]
+)
 
-# Anesthesia type
-ane_type = st.sidebar.selectbox("Anesthesia type", ["General", "Regional", "MAC"], index=0)
-
-# Drug filter
 drug_columns = ["intraop_mdz", "intraop_ftn", "intraop_epi", "intraop_phe", "intraop_eph"]
-selected_drugs = st.sidebar.multiselect("Exclude cases with these drugs", drug_columns)
+excluded_drugs = st.sidebar.multiselect("Exclude Cases with These Drugs", drug_columns)
 
-# Run filter
+ane_type = st.sidebar.selectbox("Anesthesia Type", ["General", "Regional", "MAC"], index=0)
+
 if st.sidebar.button("🚦 Filter Valid Cases"):
-    selector = CaseSelector(
-        df_cases=df_cases,
-        df_trks=df_trks,
-        ane_type=ane_type,
-        required_variables=selected_signals,
-        intraoperative_boluses=selected_drugs
-    )
+    selector = CaseSelector(df_cases, df_trks,
+                            ane_type=ane_type,
+                            required_variables=selected_signals,
+                            intraoperative_boluses=excluded_drugs)
     valid_ids = selector.select_valid_cases()
-    df_valid = df_cases[df_cases['caseid'].isin(valid_ids)].copy()
-    st.session_state.valid_cases = valid_ids
+    df_valid = df_cases[df_cases['caseid'].isin(valid_ids)]
+    st.session_state.valid_ids = valid_ids
     st.success(f"✅ Found {len(valid_ids)} valid cases.")
-    st.dataframe(df_valid.head())
+    st.dataframe(df_valid[["caseid", "subjectid", "age", "sex", "bmi"]].head())
 
-# ---- Section 3: Case selection
-if "valid_cases" in st.session_state:
-    selected_case = st.selectbox("🩺 Select a case for analysis", st.session_state.valid_cases)
+# ---- 3. Select Case IDs to Process
+if "valid_ids" in st.session_state:
+    selected_ids = st.multiselect("🔎 Select Case IDs to Analyze", st.session_state.valid_ids[:50])
+    plot_ids = st.multiselect("📈 Select Case IDs to Plot", selected_ids)
 
-    if st.button("📈 Run Signal Analysis"):
-        try:
-            data = load_case(selected_case, selected_signals, interval=1)
-            st.info(f"Case {selected_case} loaded.")
+    if st.button("🚀 Run Full Analysis"):
+        for cid in selected_ids:
+            try:
+                st.subheader(f"Case {cid}")
+                data = load_case(cid, selected_signals, interval=1)
 
-            # Compute global stats
-            global_medians = {
-                var: np.nanmedian(data[:, i]) for i, var in enumerate(selected_signals)
-            }
-            global_mads = {
-                var: np.nanmedian(np.abs(data[:, i] - global_medians[var])) or 1e-6
-                for i, var in enumerate(selected_signals)
-            }
+                # Step 1: Compute global medians and MADs
+                global_medians = {var: np.nanmedian(data[:, i]) for i, var in enumerate(selected_signals)}
+                global_mads = {
+                    var: np.nanmedian(np.abs(data[:, i] - global_medians[var])) or 1e-6
+                    for i, var in enumerate(selected_signals)
+                }
 
-            # Analyzer
-            analyzer = SignalAnalyzer(
-                caseid=selected_case,
-                data=data,
-                variable_names=selected_signals,
-                global_medians=global_medians,
-                global_mads=global_mads,
-                plot=False
-            )
-            analyzer.analyze()
-            st.success("✅ Signal analysis completed.")
+                # Step 2: Analyze
+                analyzer = SignalAnalyzer(
+                    caseid=cid,
+                    data=data,
+                    variable_names=selected_signals,
+                    global_medians=global_medians,
+                    global_mads=global_mads,
+                    plot=False
+                )
+                analyzer.analyze()
 
-            # Visualization
-            fig = analyzer.plot()
-            st.plotly_chart(fig, use_container_width=True)
+                # Step 3: Process
+                processor = SignalProcessor(
+                    data=analyzer.data,
+                    issues=analyzer.issues,
+                    variable_names=selected_signals,
+                    gap_strategy='interpolate_short',
+                    long_gap_strategy='nan',
+                    interp_method='auto'
+                )
+                clean_data = processor.process()
 
-            # Processor
-            processor = SignalProcessor(
-                data=analyzer.data,
-                issues=analyzer.issues,
-                variable_names=selected_signals
-            )
-            cleaned_data = processor.process()
+                # Step 4: Evaluate
+                evaluator = Evaluator(raw_data=data, imputed_data=clean_data, variable_names=selected_signals)
+                stats_df, length_df = evaluator.compute_stats(raw_length=data.shape[0])
+                st.write("📊 Summary:")
+                st.dataframe(stats_df)
 
-            # Evaluator
-            evaluator = Evaluator(
-                raw_data=data,
-                imputed_data=cleaned_data,
-                variable_names=selected_signals
-            )
-            stats_df, length_df = evaluator.compute_stats(raw_length=data.shape[0])
+                # Step 5: Plot if selected
+                if cid in plot_ids:
+                    fig = analyzer.plot(signal_units={
+                        "BIS/BIS": "%",
+                        "Solar8000/NIBP_SBP": "mmHg",
+                        "Solar8000/NIBP_DBP": "mmHg",
+                        "Orchestra/PPF20_RATE": "bpm"
+                    })
+                    st.plotly_chart(fig, use_container_width=True)
 
-            st.subheader("📊 Signal Summary Statistics")
-            st.dataframe(stats_df)
-
-            st.subheader("📥 Download Summary")
-            csv = stats_df.to_csv(index=False).encode('utf-8')
-            st.download_button("Download CSV", data=csv, file_name=f"case_{selected_case}_summary.csv")
-
-        except Exception as e:
-            st.error(f"❌ Error during analysis: {e}")
+            except Exception as e:
+                st.error(f"❌ Error in case {cid}: {e}")
