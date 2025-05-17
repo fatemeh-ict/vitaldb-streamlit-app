@@ -277,9 +277,10 @@ class Evaluator:
 
 
 
-st.set_page_config(layout="wide", page_title="VitalDB Analyzer")
+st.set_page_config(page_title="VitalDB Signal Analyzer", layout="wide")
+st.title("🩺 VitalDB Signal Analyzer")
 
-# Load metadata once and cache it
+# --- Caching the metadata ---
 @st.cache_data
 def load_metadata():
     df_cases = pd.read_csv("https://api.vitaldb.net/cases")
@@ -289,56 +290,77 @@ def load_metadata():
 
 df_cases, df_trks, df_labs = load_metadata()
 
-st.title("🩺 VitalDB Signal Analyzer")
+# --- Sidebar ---
+st.sidebar.header("⚙️ Filter Settings")
 
-# --- Sidebar: Variable and Filter Selection ---
-st.sidebar.header("⚙️ Case Selection Settings")
-ane_type = st.sidebar.selectbox("Anesthesia Type", df_cases["ane_type"].unique())
-variables = st.sidebar.multiselect("Required Variables", df_trks["tname"].unique(),
-                                   default=["BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP"])
+ane_type = st.sidebar.selectbox("Anesthesia Type", sorted(df_cases["ane_type"].dropna().unique()), index=0)
+all_variables = sorted(df_trks["tname"].dropna().unique())
+selected_variables = st.sidebar.multiselect("Required Variables", all_variables, default=[
+    "BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP"
+])
+bolus_columns = ["intraop_mdz", "intraop_ftn", "intraop_epi", "intraop_phe", "intraop_eph"]
+selected_boluses = st.sidebar.multiselect("Exclude Cases With These Drugs:", bolus_columns)
 
-bolus_cols = ["intraop_mdz", "intraop_ftn", "intraop_epi", "intraop_phe", "intraop_eph"]
-excluded_boluses = st.sidebar.multiselect("Exclude cases with boluses:", bolus_cols)
-
-if st.sidebar.button("Filter Valid Cases"):
-    selector = CaseSelector(df_cases, df_trks, ane_type=ane_type,
-                            required_variables=variables,
-                            intraoperative_boluses=excluded_boluses)
+if st.sidebar.button("🔍 Find Valid Cases"):
+    selector = CaseSelector(df_cases, df_trks,
+                            ane_type=ane_type,
+                            required_variables=selected_variables,
+                            intraoperative_boluses=selected_boluses)
     valid_ids = selector.select_valid_cases()
-    df_cases_filtered = df_cases[df_cases["caseid"].isin(valid_ids)]
-    st.session_state["filtered_ids"] = valid_ids
+    st.session_state["valid_ids"] = valid_ids
+    st.session_state["df_filtered"] = df_cases[df_cases["caseid"].isin(valid_ids)]
     st.success(f"{len(valid_ids)} valid cases found.")
 
-# --- Main Section: Case Analysis ---
-if "filtered_ids" in st.session_state:
-    case_id = st.selectbox("Select a Case ID", st.session_state["filtered_ids"])
+# --- Case Selection ---
+if "valid_ids" in st.session_state and st.session_state["valid_ids"]:
+    case_id = st.selectbox("Select Case ID", st.session_state["valid_ids"])
 
-    if st.button("Run Analysis"):
-        with st.spinner("Running pipeline..."):
-            # 1. Load signal
-            data = vitaldb.load_case(case_id, variables, interval=1)
+    if st.button("📈 Analyze Case"):
+        with st.spinner("Running signal analysis..."):
 
-            # 2. Global stats
-            global_medians = {var: np.nanmedian(data[:, i]) for i, var in enumerate(variables)}
-            global_mads = {var: np.nanmedian(np.abs(data[:, i] - global_medians[var])) or 1e-6 for i, var in enumerate(variables)}
+            try:
+                variables = selected_variables
+                data = vitaldb.load_case(case_id, variables, interval=1)
 
-            # 3. Analyze
-            analyzer = SignalAnalyzer(caseid=case_id, data=data, variable_names=variables,
-                                      global_medians=global_medians, global_mads=global_mads, plot=False)
-            analyzer.analyze()
-            fig = analyzer.plot()
-            st.plotly_chart(fig, use_container_width=True)
+                # Compute global median & MAD
+                global_medians = {}
+                global_mads = {}
+                for i, var in enumerate(variables):
+                    sig = data[:, i]
+                    sig = sig[~np.isnan(sig)]
+                    global_medians[var] = np.median(sig)
+                    global_mads[var] = np.median(np.abs(sig - global_medians[var])) or 1e-6
 
-            # 4. Interpolate and align
-            processor = SignalProcessor(data=analyzer.data, issues=analyzer.issues,
-                                        variable_names=variables)
-            imputed = processor.process()
+                # Analyze
+                analyzer = SignalAnalyzer(caseid=case_id, data=data, variable_names=variables,
+                                          global_medians=global_medians, global_mads=global_mads, plot=False)
+                analyzer.analyze()
+                fig = analyzer.plot()
+                st.plotly_chart(fig, use_container_width=True)
 
-            # 5. Evaluate
-            evaluator = Evaluator(raw_data=data, imputed_data=imputed, variable_names=variables)
-            stats_df, length_df = evaluator.compute_stats(raw_length=data.shape[0])
+                # Process (interpolate + align)
+                processor = SignalProcessor(data=analyzer.data, issues=analyzer.issues,
+                                            variable_names=variables,
+                                            gap_strategy='interpolate_short',
+                                            long_gap_strategy='nan',
+                                            interp_method='auto',
+                                            global_std_dict={var: np.std(data[:, i][~np.isnan(data[:, i])]) for i, var in enumerate(variables)})
+                clean_data = processor.process()
 
-            st.subheader("📊 Imputation Summary")
-            st.dataframe(stats_df)
-            st.write("⏱ Length Info:", length_df.to_dict("records")[0])
-            evaluator.plot_comparison()
+                # Evaluate
+                evaluator = Evaluator(raw_data=data, imputed_data=clean_data, variable_names=variables)
+                stats_df, length_df = evaluator.compute_stats(raw_length=data.shape[0])
+
+                st.subheader("📊 Imputation Statistics")
+                st.dataframe(stats_df)
+
+                st.subheader("📏 Signal Length Info")
+                st.write(length_df.to_dict("records")[0])
+
+                st.subheader("📉 Signal Comparison")
+                evaluator.plot_comparison()
+
+            except Exception as e:
+                st.error(f"Error while processing case {case_id}: {e}")
+else:
+    st.info("Please filter valid cases from the sidebar to begin.")
