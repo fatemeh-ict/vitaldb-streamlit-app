@@ -283,7 +283,7 @@ def load_metadata():
     df_labs = pd.read_csv("https://api.vitaldb.net/labs")
     return df_cases, df_trks, df_labs
 
-df_cases, df_trks, df_labs = load_metadata()
+# df_cases, df_trks, df_labs = load_metadata()
 
 signal_options = sorted(df_trks['tname'].value_counts().index.tolist())
 default_signals = ["BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP", "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE"]
