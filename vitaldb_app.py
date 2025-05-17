@@ -1,154 +1,112 @@
-# VitalDB Professional Streamlit GUI - Optimized Analyzer & Interpolator
-
 import streamlit as st
 import pandas as pd
 import numpy as np
-import vitaldb
-from scipy.interpolate import interp1d
-from plotly.subplots import make_subplots
+from vitaldb import load_case
 import plotly.graph_objects as go
+from src.analyzer import SignalAnalyzer, SignalProcessor, Evaluator
+from src.selector import CaseSelector
 
-st.set_page_config(layout="wide")
-st.title("💉 VitalDB Professional Analyzer & Interpolator")
+st.set_page_config(layout="wide", page_title="VitalDB Analyzer")
+st.title("🧠 VitalDB Signal Quality & Preprocessing Dashboard")
 
-# ------------------ Load Data ------------------
+# ---- Section 1: Load Metadata from VitalDB
 @st.cache_data
-def load_vitaldb():
+def load_metadata():
     df_cases = pd.read_csv("https://api.vitaldb.net/cases")
     df_trks = pd.read_csv("https://api.vitaldb.net/trks")
-    df_labs = pd.read_csv("https://api.vitaldb.net/labs")
-    return df_cases, df_trks, df_labs
+    return df_cases, df_trks
 
-df_cases, df_trks, df_labs = load_vitaldb()
+df_cases, df_trks = load_metadata()
+st.success("✅ Metadata loaded successfully.")
 
-# ------------------ UI Inputs ------------------
-with st.sidebar:
-    st.header("⚙️ Configuration")
-    ane_type = st.selectbox("Anesthesia Type", df_cases['ane_type'].dropna().unique())
-    remove_drugs = st.multiselect("Exclude Cases with These Drugs", 
-                                   ['intraop_mdz', 'intraop_ftn', 'intraop_epi', 'intraop_phe', 'intraop_eph'])
+# ---- Section 2: User selects signals and filtering
+st.sidebar.header("🔧 Configuration")
 
-    group_choice = st.radio("Select Variable Group", ["Group 1 (RFTN20)", "Group 2 (RFTN50)"])
+# Signal choices
+all_signals = sorted(df_trks['tname'].value_counts().index.to_list())
+selected_signals = st.sidebar.multiselect("Select signal variables", all_signals[:200], default=[
+    "BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP",
+    "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE"
+])
 
-    if group_choice == "Group 1 (RFTN20)":
-        variable_names = ["Solar8000/NIBP_DBP", "Solar8000/NIBP_SBP", "BIS/BIS",
-                          "Orchestra/PPF20_CE", "Orchestra/RFTN20_CE", "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE"]
-    else:
-        variable_names = ["Solar8000/NIBP_DBP", "Solar8000/NIBP_SBP", "BIS/BIS",
-                          "Orchestra/PPF20_CE", "Orchestra/RFTN50_CE", "Orchestra/PPF20_RATE", "Orchestra/RFTN50_RATE"]
+# Anesthesia type
+ane_type = st.sidebar.selectbox("Anesthesia type", ["General", "Regional", "MAC"], index=0)
 
-    gap_action = st.selectbox("Long Gap Handling", ["leave", "nan", "zero"])
-    interp_method = st.selectbox("Interpolation Method", ["auto", "linear", "cubic", "slinear"])
+# Drug filter
+drug_columns = ["intraop_mdz", "intraop_ftn", "intraop_epi", "intraop_phe", "intraop_eph"]
+selected_drugs = st.sidebar.multiselect("Exclude cases with these drugs", drug_columns)
 
-# ------------------ Case Filtering ------------------
-def select_valid_cases():
-    df_filtered = df_cases[df_cases['ane_type'] == ane_type].copy()
-    case_ids = set(df_filtered['caseid'])
-    for var in variable_names:
-        case_ids &= set(df_trks[df_trks['tname'] == var]['caseid'])
-    if remove_drugs:
-        cols = [col for col in remove_drugs if col in df_filtered.columns]
-        df_filtered = df_filtered[~df_filtered[cols].gt(0).any(axis=1)]
-        case_ids &= set(df_filtered['caseid'])
-    return sorted(case_ids)
+# Run filter
+if st.sidebar.button("🚦 Filter Valid Cases"):
+    selector = CaseSelector(
+        df_cases=df_cases,
+        df_trks=df_trks,
+        ane_type=ane_type,
+        required_variables=selected_signals,
+        intraoperative_boluses=selected_drugs
+    )
+    valid_ids = selector.select_valid_cases()
+    df_valid = df_cases[df_cases['caseid'].isin(valid_ids)].copy()
+    st.session_state.valid_cases = valid_ids
+    st.success(f"✅ Found {len(valid_ids)} valid cases.")
+    st.dataframe(df_valid.head())
 
-valid_ids = select_valid_cases()
-st.success(f"✅ {len(valid_ids)} valid case(s) found.")
+# ---- Section 3: Case selection
+if "valid_cases" in st.session_state:
+    selected_case = st.selectbox("🩺 Select a case for analysis", st.session_state.valid_cases)
 
-selected_caseid = st.selectbox("📦 Choose a CaseID to Analyze", valid_ids)
+    if st.button("📈 Run Signal Analysis"):
+        try:
+            data = load_case(selected_case, selected_signals, interval=1)
+            st.info(f"Case {selected_case} loaded.")
 
-# ------------------ Global Stats (One-time Computation) ------------------
-@st.cache_data
-def compute_global_stats(case_ids, variable_names):
-    medians = {}
-    mads = {}
-    for var in variable_names:
-        values = []
-        for cid in case_ids:
-            try:
-                data = vitaldb.load_case(cid, variable_names)
-                sig = data[:, variable_names.index(var)]
-                values.extend(sig[~np.isnan(sig)])
-            except:
-                continue
-        values = np.array(values)
-        if len(values) > 0:
-            medians[var] = np.median(values)
-            mads[var] = np.median(np.abs(values - medians[var])) or 1e-6
-    return medians, mads
+            # Compute global stats
+            global_medians = {
+                var: np.nanmedian(data[:, i]) for i, var in enumerate(selected_signals)
+            }
+            global_mads = {
+                var: np.nanmedian(np.abs(data[:, i] - global_medians[var])) or 1e-6
+                for i, var in enumerate(selected_signals)
+            }
 
-if "global_medians" not in st.session_state or "global_mads" not in st.session_state:
-    with st.spinner("Computing global stats (only once)..."):
-        medians, mads = compute_global_stats(valid_ids, variable_names)
-        st.session_state["global_medians"] = medians
-        st.session_state["global_mads"] = mads
+            # Analyzer
+            analyzer = SignalAnalyzer(
+                caseid=selected_case,
+                data=data,
+                variable_names=selected_signals,
+                global_medians=global_medians,
+                global_mads=global_mads,
+                plot=False
+            )
+            analyzer.analyze()
+            st.success("✅ Signal analysis completed.")
 
-# ------------------ Analysis & Interpolation ------------------
-def analyze_and_plot(caseid, variable_names):
-    data = vitaldb.load_case(caseid, variable_names)
-    df = pd.DataFrame(data, columns=variable_names)
-    df['time'] = np.arange(len(df))
+            # Visualization
+            fig = analyzer.plot()
+            st.plotly_chart(fig, use_container_width=True)
 
-    medians = st.session_state["global_medians"]
-    mads = st.session_state["global_mads"]
+            # Processor
+            processor = SignalProcessor(
+                data=analyzer.data,
+                issues=analyzer.issues,
+                variable_names=selected_signals
+            )
+            cleaned_data = processor.process()
 
-    fig = make_subplots(rows=len(variable_names), cols=1, shared_xaxes=True, subplot_titles=variable_names)
+            # Evaluator
+            evaluator = Evaluator(
+                raw_data=data,
+                imputed_data=cleaned_data,
+                variable_names=selected_signals
+            )
+            stats_df, length_df = evaluator.compute_stats(raw_length=data.shape[0])
 
-    for i, var in enumerate(variable_names):
-        sig = df[var]
-        time = df['time']
-        nan_idx = np.where(np.isnan(sig))[0]
-        out_idx = np.where(np.abs(sig - medians[var]) > 3.5 * mads[var])[0]
+            st.subheader("📊 Signal Summary Statistics")
+            st.dataframe(stats_df)
 
-        fig.add_trace(go.Scatter(x=time, y=sig, mode='lines', name=var), row=i+1, col=1)
-        fig.add_trace(go.Scatter(x=time[nan_idx], y=[sig.min()-5]*len(nan_idx), mode='markers',
-                                 marker=dict(color='gray'), name=f'NaN - {var}'), row=i+1, col=1)
-        fig.add_trace(go.Scatter(x=time[out_idx], y=sig[out_idx], mode='markers',
-                                 marker=dict(color='red', symbol='star', size=7), name=f'Outliers - {var}'), row=i+1, col=1)
+            st.subheader("📥 Download Summary")
+            csv = stats_df.to_csv(index=False).encode('utf-8')
+            st.download_button("Download CSV", data=csv, file_name=f"case_{selected_case}_summary.csv")
 
-    fig.update_layout(height=300*len(variable_names), title=f"Signal Quality - Case {caseid}")
-    return df, fig
-
-def interpolate(df, variable_names):
-    global_std = {v: df[v].std() for v in variable_names}
-    df_interp = df.copy()
-    for var in variable_names:
-        sig = df[var].values
-        x = np.arange(len(sig))
-        valid = ~np.isnan(sig)
-        if valid.sum() < 2:
-            continue
-        if interp_method == "auto":
-            std = np.std(sig[valid])
-            if std < global_std[var]*0.7:
-                method = "linear"
-            elif std < global_std[var]*1.3:
-                method = "cubic"
-            else:
-                method = "slinear"
-        else:
-            method = interp_method
-        f = interp1d(x[valid], sig[valid], kind=method, fill_value="extrapolate")
-        sig_filled = sig.copy()
-        gap = np.isnan(sig)
-        sig_filled[gap] = f(x[gap]) if gap_action != "leave" else sig[gap]
-        df_interp[var] = sig_filled
-    return df_interp
-
-# ------------------ Run Analysis ------------------
-if st.button("🔍 Run Analysis"):
-    with st.spinner("Running full analysis and interpolation..."):
-        df_raw, fig_raw = analyze_and_plot(selected_caseid, variable_names)
-        st.plotly_chart(fig_raw, use_container_width=True)
-
-        df_interp = interpolate(df_raw.copy(), variable_names)
-        fig_interp = make_subplots(rows=len(variable_names), cols=1, shared_xaxes=True, subplot_titles=variable_names)
-
-        for i, var in enumerate(variable_names):
-            fig_interp.add_trace(go.Scatter(x=df_interp['time'], y=df_raw[var], mode='lines', name=f"Raw {var}"), row=i+1, col=1)
-            fig_interp.add_trace(go.Scatter(x=df_interp['time'], y=df_interp[var], mode='lines', name=f"Imputed {var}"), row=i+1, col=1)
-
-        fig_interp.update_layout(height=300*len(variable_names), title=f"🔁 Interpolation - Case {selected_caseid}")
-        st.plotly_chart(fig_interp, use_container_width=True)
-
-        st.download_button("📁 Download Interpolated CSV", df_interp.to_csv(index=False), file_name=f"case_{selected_caseid}_interpolated.csv")
+        except Exception as e:
+            st.error(f"❌ Error during analysis: {e}")
