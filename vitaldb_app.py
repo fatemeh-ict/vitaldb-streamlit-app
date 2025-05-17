@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-from vitaldb import load_case
+import vitaldb 
 import plotly.graph_objects as go
 
 # =============================
