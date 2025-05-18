@@ -20,6 +20,7 @@ variables = [
     "Orchestra/RFTN50_RATE"
 ]
 
+# ------------------------------
 # Classes
 class PipelineRunner:
     def __init__(self, case_ids, variables):
@@ -40,8 +41,7 @@ class PipelineRunner:
                 continue
 
         if not all_data:
-            st.error("No valid data found.")
-            return None, None
+            return None, None, 0
 
         min_len = min(d.shape[0] for d in all_data)
         trimmed_data = np.concatenate([d[:min_len, :] for d in all_data], axis=0)
@@ -54,15 +54,10 @@ class PipelineRunner:
             self.global_medians[var] = median
             self.global_mads[var] = mad
 
-        return trimmed_data, self.global_medians
+        return trimmed_data, self.global_medians, len(all_data)
 
 # ------------------------------
-# Load metadata
-with st.spinner("Loading metadata from VitalDB..."):
-    df_cases = pd.read_csv("https://api.vitaldb.net/cases")
-    df_trks = pd.read_csv("https://api.vitaldb.net/trks")
-
-# Filter valid case IDs
+# Helper function to filter valid cases
 def select_valid_case_ids(df_cases, df_trks, required_vars):
     valid_ids = set(df_cases['caseid'])
     for var in required_vars:
@@ -70,40 +65,45 @@ def select_valid_case_ids(df_cases, df_trks, required_vars):
         valid_ids &= case_ids_with_var
     return sorted(list(valid_ids))[:10]
 
+# ------------------------------
+# Load metadata
+with st.spinner("Loading metadata from VitalDB..."):
+    df_cases = pd.read_csv("https://api.vitaldb.net/cases")
+    df_trks = pd.read_csv("https://api.vitaldb.net/trks")
+
 case_ids = select_valid_case_ids(df_cases, df_trks, variables)
 
-# ------------------------------
-# Run pipeline
 st.subheader("🔧 Running Pipeline on Selected Cases")
 st.write(f"Using {len(case_ids)} valid case IDs.")
 
+if not case_ids:
+    st.error("No valid case IDs found. Try reducing the number of required signals.")
+    st.stop()
+
 runner = PipelineRunner(case_ids, variables)
-trimmed_data, global_medians = runner.run()
+trimmed_data, global_medians, used_cases = runner.run()
 
 if trimmed_data is not None:
-    # ------------------------------
-    # Show summary
+    st.success(f"✅ Loaded and analyzed {used_cases} cases")
+
     st.subheader("📋 Global Statistics")
     st.write(f"Trimmed data shape: {trimmed_data.shape}")
     st.write(f"Global median for BIS/BIS: {global_medians['BIS/BIS']:.2f}")
 
-    # ------------------------------
-    # Plot histogram
     bis_index = variables.index("BIS/BIS")
     bis_data = trimmed_data[:, bis_index]
     bis_data = bis_data[~np.isnan(bis_data)]
 
     fig, ax = plt.subplots(figsize=(10, 6))
     ax.hist(bis_data, bins=50, color='skyblue', edgecolor='black', alpha=0.7)
-    ax.axvline(global_medians['BIS/BIS'], color='red', linestyle='--', linewidth=2, label=f"Global Median = {global_medians['BIS/BIS']:.2f}")
+    ax.axvline(global_medians['BIS/BIS'], color='red', linestyle='--', linewidth=2,
+               label=f"Global Median = {global_medians['BIS/BIS']:.2f}")
     ax.set_xlabel("BIS/BIS values")
     ax.set_ylabel("Frequency")
     ax.set_title("Histogram of BIS/BIS with Global Median")
     ax.legend()
     st.pyplot(fig)
 
-    # ------------------------------
-    # Summary stats
     st.subheader("📊 Summary Statistics")
     st.write({
         "Mean": round(np.mean(bis_data), 2),
@@ -111,3 +111,5 @@ if trimmed_data is not None:
         "Std Dev": round(np.std(bis_data), 2),
         "NaNs": int(len(trimmed_data[:, bis_index]) - len(bis_data))
     })
+else:
+    st.error("No valid data found.")
