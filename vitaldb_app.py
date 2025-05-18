@@ -35,24 +35,33 @@ class PipelineRunner:
         for cid in self.case_ids:
             try:
                 data = vitaldb.load_case(cid, self.variables, interval=1)
-                if data is not None and data.shape[0] > 0:
+                if data is not None and isinstance(data, np.ndarray) and data.shape[0] > 0:
                     all_data.append(data)
-            except:
+            except Exception as e:
+                st.warning(f"Skipping case {cid} due to error: {e}")
                 continue
 
         if not all_data:
             return None, None, 0
 
-        min_len = min(d.shape[0] for d in all_data)
-        trimmed_data = np.concatenate([d[:min_len, :] for d in all_data], axis=0)
+        try:
+            min_len = min(d.shape[0] for d in all_data)
+            trimmed_data = np.concatenate([d[:min_len, :] for d in all_data], axis=0)
+        except Exception as e:
+            st.error(f"Error during trimming or concatenation: {e}")
+            return None, None, 0
 
         for i, var in enumerate(self.variables):
             sig = trimmed_data[:, i]
             sig = sig[~np.isnan(sig)]
-            median = np.median(sig)
-            mad = np.median(np.abs(sig - median)) or 1e-6
-            self.global_medians[var] = median
-            self.global_mads[var] = mad
+            if len(sig) == 0:
+                self.global_medians[var] = np.nan
+                self.global_mads[var] = np.nan
+            else:
+                median = np.median(sig)
+                mad = np.median(np.abs(sig - median)) or 1e-6
+                self.global_medians[var] = median
+                self.global_mads[var] = mad
 
         return trimmed_data, self.global_medians, len(all_data)
 
@@ -67,9 +76,13 @@ def select_valid_case_ids(df_cases, df_trks, required_vars):
 
 # ------------------------------
 # Load metadata
-with st.spinner("Loading metadata from VitalDB..."):
-    df_cases = pd.read_csv("https://api.vitaldb.net/cases")
-    df_trks = pd.read_csv("https://api.vitaldb.net/trks")
+try:
+    with st.spinner("Loading metadata from VitalDB..."):
+        df_cases = pd.read_csv("https://api.vitaldb.net/cases")
+        df_trks = pd.read_csv("https://api.vitaldb.net/trks")
+except Exception as e:
+    st.error(f"Failed to load metadata: {e}")
+    st.stop()
 
 case_ids = select_valid_case_ids(df_cases, df_trks, variables)
 
@@ -94,22 +107,25 @@ if trimmed_data is not None:
     bis_data = trimmed_data[:, bis_index]
     bis_data = bis_data[~np.isnan(bis_data)]
 
-    fig, ax = plt.subplots(figsize=(10, 6))
-    ax.hist(bis_data, bins=50, color='skyblue', edgecolor='black', alpha=0.7)
-    ax.axvline(global_medians['BIS/BIS'], color='red', linestyle='--', linewidth=2,
-               label=f"Global Median = {global_medians['BIS/BIS']:.2f}")
-    ax.set_xlabel("BIS/BIS values")
-    ax.set_ylabel("Frequency")
-    ax.set_title("Histogram of BIS/BIS with Global Median")
-    ax.legend()
-    st.pyplot(fig)
+    if len(bis_data) == 0:
+        st.warning("No valid BIS/BIS data to display.")
+    else:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        ax.hist(bis_data, bins=50, color='skyblue', edgecolor='black', alpha=0.7)
+        ax.axvline(global_medians['BIS/BIS'], color='red', linestyle='--', linewidth=2,
+                   label=f"Global Median = {global_medians['BIS/BIS']:.2f}")
+        ax.set_xlabel("BIS/BIS values")
+        ax.set_ylabel("Frequency")
+        ax.set_title("Histogram of BIS/BIS with Global Median")
+        ax.legend()
+        st.pyplot(fig)
 
-    st.subheader("📊 Summary Statistics")
-    st.write({
-        "Mean": round(np.mean(bis_data), 2),
-        "Median": round(np.median(bis_data), 2),
-        "Std Dev": round(np.std(bis_data), 2),
-        "NaNs": int(len(trimmed_data[:, bis_index]) - len(bis_data))
-    })
+        st.subheader("📊 Summary Statistics")
+        st.write({
+            "Mean": round(np.mean(bis_data), 2),
+            "Median": round(np.median(bis_data), 2),
+            "Std Dev": round(np.std(bis_data), 2),
+            "NaNs": int(len(trimmed_data[:, bis_index]) - len(bis_data))
+        })
 else:
-    st.error("No valid data found.")
+    st.error("No valid data found for analysis.")
