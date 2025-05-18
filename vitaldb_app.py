@@ -6,11 +6,9 @@ import vitaldb
 from scipy.interpolate import interp1d
 from collections import defaultdict
 
-# ---------------------------
-st.set_page_config(page_title="VitalDB Full Analyzer", layout="wide")
-st.title("🧠 Full VitalDB Signal Pipeline")
+st.set_page_config(page_title="VitalDB Analyzer", layout="wide")
+st.title("🧠 VitalDB Signal Analysis Pipeline")
 
-# ---------------------------
 @st.cache_data(show_spinner=False)
 def load_metadata():
     df_cases = pd.read_csv("https://api.vitaldb.net/cases")
@@ -19,13 +17,11 @@ def load_metadata():
 
 df_cases, df_trks = load_metadata()
 
-# ---------------------------
-# Group Definitions
 group1 = ["BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP", "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE"]
 group2 = ["BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP", "Orchestra/PPF20_RATE", "Orchestra/RFTN50_RATE"]
 all_signals = list(set(group1 + group2))
 
-# ---------------------------
+# Filtering helper
 def filter_cases(df_trks, signals):
     valid = set(df_trks['caseid'].unique())
     for s in signals:
@@ -33,149 +29,140 @@ def filter_cases(df_trks, signals):
         valid &= ids
     return valid
 
-# ---------------------------
-# Classes
+# Analyzer
 class SignalAnalyzer:
-    def __init__(self, data, variable_names, global_medians, global_mads):
+    def __init__(self, data, variables, global_medians, global_mads):
         self.data = data
-        self.variable_names = variable_names
+        self.variables = variables
         self.global_medians = global_medians
         self.global_mads = global_mads
         self.issues = defaultdict(dict)
 
     def analyze(self):
-        for i, var in enumerate(self.variable_names):
+        for i, var in enumerate(self.variables):
             x = self.data[:, i]
-            nan_idx = np.isnan(x)
-            self.issues[var]['nan_count'] = nan_idx.sum()
-
+            self.issues[var]['NaNs'] = int(np.isnan(x).sum())
             diff = np.diff(x)
-            mad_val = self.global_mads[var] or 1e-6
-            jump_idx = np.where(np.abs(diff - np.median(diff)) > 3.5 * mad_val)[0]
-            self.issues[var]['jump_count'] = len(jump_idx)
-
-            if "NIBP" in var:
-                out_idx = np.where((x <= 0) | (np.abs(x - self.global_medians[var]) > 3.5 * mad_val))[0]
-            else:
-                out_idx = np.where(np.abs(x - self.global_medians[var]) > 3.5 * mad_val)[0]
-            self.issues[var]['outlier_count'] = len(out_idx)
-
+            jump = np.where(np.abs(diff - np.median(diff)) > 3.5 * self.global_mads[var])[0]
+            self.issues[var]['Jumps'] = int(len(jump))
+            out = np.where(np.abs(x - self.global_medians[var]) > 3.5 * self.global_mads[var])[0]
+            self.issues[var]['Outliers'] = int(len(out))
         return self.issues
 
+# Processor
 class SignalProcessor:
     def __init__(self, data):
-        self.raw = data
+        self.data = data
 
     def interpolate(self):
-        x = np.arange(self.raw.shape[0])
-        data_interp = self.raw.copy()
-        for i in range(data_interp.shape[1]):
-            sig = data_interp[:, i]
+        x = np.arange(self.data.shape[0])
+        new_data = self.data.copy()
+        for i in range(new_data.shape[1]):
+            sig = new_data[:, i]
             if np.isnan(sig).sum():
                 valid = ~np.isnan(sig)
-                if valid.sum() >= 2:
-                    f = interp1d(x[valid], sig[valid], kind='linear', fill_value='extrapolate')
-                    data_interp[:, i] = f(x)
-        return data_interp
+                f = interp1d(x[valid], sig[valid], kind='linear', fill_value='extrapolate')
+                new_data[:, i] = f(x)
+        return new_data
 
+# Evaluator
 class Evaluator:
-    def __init__(self, raw, imputed, variables):
+    def __init__(self, raw, interpolated, variables):
         self.raw = raw
-        self.imputed = imputed
+        self.interpolated = interpolated
         self.variables = variables
 
     def compute(self):
-        result = []
+        summary = []
         for i, var in enumerate(self.variables):
-            result.append({
+            summary.append({
                 'Signal': var,
                 'Mean Before': np.nanmean(self.raw[:, i]),
-                'Mean After': np.nanmean(self.imputed[:, i]),
+                'Mean After': np.nanmean(self.interpolated[:, i]),
                 'Median Before': np.nanmedian(self.raw[:, i]),
-                'Median After': np.median(self.imputed[:, i]),
-                'NaNs Before': np.isnan(self.raw[:, i]).sum(),
-                'NaNs After': np.isnan(self.imputed[:, i]).sum(),
+                'Median After': np.nanmedian(self.interpolated[:, i]),
+                'NaNs Before': int(np.isnan(self.raw[:, i]).sum()),
+                'NaNs After': int(np.isnan(self.interpolated[:, i]).sum()),
                 'Std Before': np.nanstd(self.raw[:, i]),
-                'Std After': np.std(self.imputed[:, i])
+                'Std After': np.std(self.interpolated[:, i])
             })
-        return pd.DataFrame(result)
+        return pd.DataFrame(summary)
 
-# ---------------------------
-tabs = st.tabs(["🧬 Select & Filter", "🔍 Signal Quality", "🛠 Interpolation", "📊 Dataset Stats"])
+# TABS
+tabs = st.tabs(["🔎 Case Selection", "📊 Signal Quality", "🛠 Interpolation", "📈 Dataset Stats"])
 
 with tabs[0]:
-    st.header("Step 1: Select Variables and Filter")
+    st.header("1️⃣ Select and Filter Cases")
     drug_vars = ["intraop_mdz", "intraop_ftn", "intraop_epi", "intraop_phe"]
-    selected_signals = st.multiselect("Select signals (intersection of group 1 & 2):", all_signals, default=all_signals)
-    selected_optype = st.multiselect("Select operation type:", sorted(df_cases['optype'].dropna().unique()))
-    excluded_drugs = st.multiselect("Exclude cases with these drugs:", drug_vars)
-    case_limit = st.radio("Number of cases to use:", [10, "All"], index=0)
+    selected_signals = st.multiselect("Select signals:", all_signals, default=all_signals)
+    ane_filter = st.multiselect("Filter by anesthesia type (ane_type):", sorted(df_cases['ane_type'].dropna().unique()))
+    exclude_drugs = st.multiselect("Exclude if these drugs used:", drug_vars)
+    limit_choice = st.radio("Run on:", [10, "All"], index=0)
 
     ids1 = filter_cases(df_trks, group1)
     ids2 = filter_cases(df_trks, group2)
-    all_valid_ids = list(ids1.union(ids2))
-    df_valid = df_cases[df_cases['caseid'].isin(all_valid_ids)]
-    if selected_optype:
-        df_valid = df_valid[df_valid['optype'].isin(selected_optype)]
-    if excluded_drugs:
-        df_valid = df_valid[df_valid[excluded_drugs].sum(axis=1) == 0]
-
-    final_ids = df_valid['caseid'].tolist()
-    if case_limit == 10:
+    union_ids = list(ids1.union(ids2))
+    df_filtered = df_cases[df_cases['caseid'].isin(union_ids)]
+    if ane_filter:
+        df_filtered = df_filtered[df_filtered['ane_type'].isin(ane_filter)]
+    if exclude_drugs:
+        df_filtered = df_filtered[df_filtered[exclude_drugs].sum(axis=1) == 0]
+    final_ids = df_filtered['caseid'].tolist()
+    if limit_choice == 10:
         final_ids = final_ids[:10]
-
-    st.success(f"Selected {len(final_ids)} cases.")
+    st.success(f"✅ {len(final_ids)} cases selected.")
 
 with tabs[1]:
-    st.header("Step 2: Signal Quality Analysis")
+    st.header("2️⃣ Signal Quality Analysis")
     if not final_ids:
-        st.warning("No valid case IDs selected.")
+        st.warning("No cases available.")
         st.stop()
 
-    all_data = [vitaldb.load_case(cid, selected_signals, interval=1) for cid in final_ids]
-    min_len = min(d.shape[0] for d in all_data)
-    trimmed = np.concatenate([d[:min_len, :] for d in all_data], axis=0)
+    data_all = [vitaldb.load_case(cid, selected_signals, interval=1) for cid in final_ids]
+    min_len = min(d.shape[0] for d in data_all)
+    data_trimmed = np.concatenate([d[:min_len, :] for d in data_all], axis=0)
+    global_medians = {sig: np.median(data_trimmed[:, i][~np.isnan(data_trimmed[:, i])]) for i, sig in enumerate(selected_signals)}
+    global_mads = {sig: np.median(np.abs(data_trimmed[:, i][~np.isnan(data_trimmed[:, i])] - global_medians[sig])) or 1e-6 for i, sig in enumerate(selected_signals)}
 
-    global_medians = {sig: np.median(trimmed[:, i][~np.isnan(trimmed[:, i])]) for i, sig in enumerate(selected_signals)}
-    global_mads = {sig: np.median(np.abs(trimmed[:, i][~np.isnan(trimmed[:, i])] - global_medians[sig])) or 1e-6 for i, sig in enumerate(selected_signals)}
+    analyzer = SignalAnalyzer(data_trimmed, selected_signals, global_medians, global_mads)
+    result = analyzer.analyze()
+    st.json(result)
 
-    analyzer = SignalAnalyzer(trimmed, selected_signals, global_medians, global_mads)
-    issue_stats = analyzer.analyze()
-
-    selected_case = st.selectbox("Choose a case ID to plot:", final_ids)
-    data_plot = vitaldb.load_case(selected_case, selected_signals, interval=1)
+    show_case = st.selectbox("Plot one case ID:", final_ids)
+    case_data = vitaldb.load_case(show_case, selected_signals, interval=1)
     for i, sig in enumerate(selected_signals):
-        fig, ax = plt.subplots(figsize=(10, 2.5))
-        ax.plot(data_plot[:, i], label=sig)
+        fig, ax = plt.subplots(figsize=(10, 3))
+        ax.plot(case_data[:, i], label=sig)
         ax.set_title(f"{sig} - Raw")
         ax.legend()
         st.pyplot(fig)
-    st.json(issue_stats)
 
 with tabs[2]:
-    st.header("Step 3: Interpolation & Alignment")
-    processor = SignalProcessor(trimmed)
+    st.header("3️⃣ Interpolation & Comparison")
+    processor = SignalProcessor(data_trimmed)
     interpolated = processor.interpolate()
 
-    evaluator = Evaluator(trimmed, interpolated, selected_signals)
+    evaluator = Evaluator(data_trimmed, interpolated, selected_signals)
     df_eval = evaluator.compute()
     st.dataframe(df_eval, use_container_width=True)
 
-    chosen = st.selectbox("Choose a signal to plot before/after:", selected_signals)
-    idx = selected_signals.index(chosen)
+    compare_sig = st.selectbox("Compare Before/After:", selected_signals)
+    idx = selected_signals.index(compare_sig)
     fig, ax = plt.subplots(figsize=(10, 3))
-    ax.plot(trimmed[:, idx], label='Raw', alpha=0.6)
-    ax.plot(interpolated[:, idx], label='Interpolated', linestyle='--')
-    ax.set_title(f"{chosen} - Before vs After")
+    ax.plot(data_trimmed[:, idx], label="Raw")
+    ax.plot(interpolated[:, idx], label="Interpolated", linestyle="--")
     ax.legend()
+    ax.set_title(f"{compare_sig} - Comparison")
     st.pyplot(fig)
 
 with tabs[3]:
-    st.header("Step 4: Dataset Summary")
+    st.header("4️⃣ Dataset Overview")
     df_used = df_cases[df_cases['caseid'].isin(final_ids)]
-    st.subheader("Numerical Stats")
+    st.subheader("Numerical Description")
     st.dataframe(df_used.select_dtypes(include=np.number).describe().T)
-    st.subheader("Categorical Counts")
-    for col in ['sex', 'optype', 'department', 'approach', 'position']:
-        st.markdown(f"**{col}**")
-        st.dataframe(df_used[col].value_counts())
+
+    st.subheader("Categorical Frequencies")
+    for cat in ['sex', 'ane_type', 'department', 'position']:
+        if cat in df_used:
+            st.markdown(f"**{cat}**")
+            st.dataframe(df_used[cat].value_counts())
