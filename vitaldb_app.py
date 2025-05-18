@@ -5,29 +5,9 @@ import matplotlib.pyplot as plt
 import vitaldb
 from scipy.interpolate import interp1d
 
-# ------------------------------
-# Page setup
-st.set_page_config(page_title="VitalDB Dual Group Analyzer", layout="centered")
-st.title("🧠 VitalDB Dual Group Signal Analysis")
+st.set_page_config(page_title="VitalDB Analyzer", layout="wide")
+st.title("💉 VitalDB Case Filtering and Signal Analysis")
 
-# ------------------------------
-# Define groups
-group1_signals = [
-    "BIS/BIS",
-    "Solar8000/NIBP_SBP",
-    "Solar8000/NIBP_DBP",
-    "Orchestra/PPF20_RATE",
-    "Orchestra/RFTN20_RATE"
-]
-group2_signals = [
-    "BIS/BIS",
-    "Solar8000/NIBP_SBP",
-    "Solar8000/NIBP_DBP",
-    "Orchestra/PPF20_RATE",
-    "Orchestra/RFTN50_RATE"
-]
-
-# ------------------------------
 # Load metadata
 @st.cache_data(show_spinner=False)
 def load_metadata():
@@ -37,35 +17,49 @@ def load_metadata():
 
 df_cases, df_trks = load_metadata()
 
-# ------------------------------
-# Function to select case IDs based on signals
-def filter_cases(signals):
-    valid_ids = set(df_cases['caseid'])
+# Define signal groups
+group1_signals = [
+    "BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP", "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE"
+]
+group2_signals = [
+    "BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP", "Orchestra/PPF20_RATE", "Orchestra/RFTN50_RATE"
+]
+all_signals = list(set(group1_signals + group2_signals))
+
+# Helper function to filter by signals
+def filter_cases(df_trks, signals):
+    valid_ids = set(df_trks['caseid'].unique())
     for sig in signals:
-        trk_ids = set(df_trks[df_trks['tname'] == sig]['caseid'])
-        valid_ids &= trk_ids
+        ids = set(df_trks[df_trks['tname'] == sig]['caseid'])
+        valid_ids &= ids
     return valid_ids
 
-# ------------------------------
-# Merge case IDs from both groups
-valid_ids_1 = filter_cases(group1_signals)
-valid_ids_2 = filter_cases(group2_signals)
-merged_ids = sorted(list(valid_ids_1.union(valid_ids_2)))[:10]  # Limit to 10
+# Tabs setup
+tabs = st.tabs(["🔍 Case Selection", "⚙️ Signal Preprocessing", "📈 Visualization", "📤 Export"])
 
-if not merged_ids:
-    st.error("❌ No valid case IDs found using either group.")
-    st.stop()
+# ------------------------
+# TAB 1: Case Selection
+with tabs[0]:
+    st.header("🔍 Filter Cases by Signal, Drugs, and Surgery Type")
+    selected_signals = st.multiselect("Select signals:", all_signals, default=["BIS/BIS"])
+    selected_optype = st.multiselect("Filter by operation type:", sorted(df_cases['optype'].dropna().unique()))
+    drug_vars = ["intraop_mdz", "intraop_ftn", "intraop_epi", "intraop_phe"]
+    drugs_to_exclude = st.multiselect("Exclude cases with intraoperative drugs:", drug_vars)
 
-# ------------------------------
-# Let user choose signals for analysis
-all_signals = list(set(group1_signals + group2_signals))
-selected_signals = st.multiselect("📌 Choose signals for analysis:", all_signals, default=["BIS/BIS"])
+    valid_ids_1 = filter_cases(df_trks, group1_signals)
+    valid_ids_2 = filter_cases(df_trks, group2_signals)
+    merged_ids = sorted(list(valid_ids_1.union(valid_ids_2)))
 
-if not selected_signals:
-    st.warning("Please select at least one signal.")
-    st.stop()
+    df_filtered = df_cases[df_cases['caseid'].isin(merged_ids)].copy()
+    if selected_optype:
+        df_filtered = df_filtered[df_filtered['optype'].isin(selected_optype)]
+    if drugs_to_exclude:
+        df_filtered = df_filtered[df_filtered[drugs_to_exclude].sum(axis=1) == 0]
 
-# ------------------------------
+    case_ids = df_filtered['caseid'].tolist()[:10]
+    st.success(f"✅ {len(case_ids)} cases selected for analysis.")
+
+# ------------------------
 # Classes
 class SignalProcessor:
     def __init__(self, data):
@@ -117,35 +111,49 @@ class PipelineRunner:
         trimmed = np.concatenate([d[:min_len, :] for d in all_data], axis=0)
         return trimmed, len(all_data)
 
-# ------------------------------
-# Run pipeline
-st.subheader("🚀 Running pipeline...")
-st.write(f"Using {len(merged_ids)} merged case IDs.")
+# ------------------------
+# TAB 2: Signal Preprocessing
+with tabs[1]:
+    st.header("⚙️ Signal Preprocessing")
+    if not case_ids:
+        st.warning("No cases selected.")
+        st.stop()
 
-runner = PipelineRunner(merged_ids, selected_signals)
-data_raw, used = runner.run()
+    runner = PipelineRunner(case_ids, selected_signals)
+    raw_data, used = runner.run()
+    if raw_data is None:
+        st.error("No data loaded.")
+        st.stop()
 
-if data_raw is None:
-    st.error("No data loaded.")
-    st.stop()
+    processor = SignalProcessor(raw_data)
+    imputed_data = processor.interpolate_nans()
+    evaluator = Evaluator(raw_data, imputed_data)
+    st.success(f"✅ {used} cases processed. Shape: {imputed_data.shape}")
 
-processor = SignalProcessor(data_raw)
-data_clean = processor.interpolate_nans()
-evaluator = Evaluator(data_raw, data_clean)
+# ------------------------
+# TAB 3: Visualization
+with tabs[2]:
+    st.header("📈 Signal Visualization and Summary")
+    if 'imputed_data' not in locals():
+        st.warning("Preprocess signals first.")
+        st.stop()
+    for i, var in enumerate(selected_signals):
+        st.markdown(f"### {var}")
+        fig, ax = plt.subplots(figsize=(10, 3))
+        ax.plot(imputed_data[:, i], label=var)
+        ax.set_title(f"{var} - Interpolated")
+        ax.grid(True)
+        ax.legend()
+        st.pyplot(fig)
+        st.write(evaluator.summary(i))
 
-st.success(f"✅ Loaded and processed {used} cases. Shape: {data_clean.shape}")
-
-# ------------------------------
-# Show summary and plot
-for i, var in enumerate(selected_signals):
-    st.markdown(f"### 📈 {var}")
-    fig, ax = plt.subplots(figsize=(10, 3))
-    ax.plot(data_clean[:, i], label=var)
-    ax.set_title(f"Interpolated Signal - {var}")
-    ax.set_xlabel("Time (s)")
-    ax.set_ylabel("Value")
-    ax.grid(True)
-    ax.legend()
-    st.pyplot(fig)
-
-    st.write(evaluator.summary(i))
+# ------------------------
+# TAB 4: Export
+with tabs[3]:
+    st.header("📤 Export Cleaned Data")
+    if 'imputed_data' in locals():
+        df_out = pd.DataFrame(imputed_data, columns=selected_signals)
+        csv = df_out.to_csv(index=False).encode('utf-8')
+        st.download_button("Download CSV", csv, "cleaned_signals.csv", "text/csv")
+    else:
+        st.info("No data available for export.")
