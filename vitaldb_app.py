@@ -6,23 +6,30 @@ import vitaldb
 from scipy.interpolate import interp1d
 
 # ------------------------------
-# Settings
+# Setup
 st.set_page_config(page_title="VitalDB Pipeline Analyzer", layout="centered")
 st.title("🧠 VitalDB Signal Analysis Pipeline")
 
 # ------------------------------
-# Configuration
+# Configuration (فقط سیگنال‌های رایج)
 variables = [
     "BIS/BIS",
     "Solar8000/NIBP_SBP",
     "Solar8000/NIBP_DBP",
-    "Orchestra/PPF20_RATE",
-    "Orchestra/RFTN20_RATE",
-    "Orchestra/RFTN50_RATE"
+    "Orchestra/PPF20_RATE"
 ]
 
 # ------------------------------
-# Classes
+# Helper Class to Select Valid Case IDs
+def select_valid_case_ids(df_cases, df_trks, required_vars):
+    valid_ids = set(df_cases['caseid'])
+    for var in required_vars:
+        case_ids_with_var = set(df_trks[df_trks['tname'] == var]['caseid'])
+        valid_ids &= case_ids_with_var
+    return sorted(list(valid_ids))[:10]
+
+# ------------------------------
+# Signal Processor
 class SignalProcessor:
     def __init__(self, data):
         self.data = data.copy()
@@ -34,27 +41,29 @@ class SignalProcessor:
             if np.isnan(signal).sum() > 0:
                 mask = ~np.isnan(signal)
                 try:
-                    interp_func = interp1d(x[mask], signal[mask], kind='linear', fill_value="extrapolate")
-                    self.data[:, i] = interp_func(x)
-                except Exception as e:
-                    st.warning(f"Interpolation failed for variable index {i}: {e}")
+                    f = interp1d(x[mask], signal[mask], kind='linear', fill_value='extrapolate')
+                    self.data[:, i] = f(x)
+                except Exception:
+                    continue
         return self.data
 
+# ------------------------------
+# Evaluator
 class Evaluator:
     def __init__(self, raw_data, imputed_data):
-        self.raw_data = raw_data
-        self.imputed_data = imputed_data
+        self.raw = raw_data
+        self.imputed = imputed_data
 
-    def summary(self, var_index):
-        raw = self.raw_data[:, var_index]
-        imp = self.imputed_data[:, var_index]
+    def summary(self, i):
         return {
-            "Mean (raw)": round(np.nanmean(raw), 2),
-            "Mean (imputed)": round(np.nanmean(imp), 2),
-            "NaNs (before)": int(np.isnan(raw).sum()),
-            "NaNs (after)": int(np.isnan(imp).sum())
+            "Mean (raw)": round(np.nanmean(self.raw[:, i]), 2),
+            "Mean (clean)": round(np.nanmean(self.imputed[:, i]), 2),
+            "NaNs before": int(np.isnan(self.raw[:, i]).sum()),
+            "NaNs after": int(np.isnan(self.imputed[:, i]).sum())
         }
 
+# ------------------------------
+# PipelineRunner
 class PipelineRunner:
     def __init__(self, case_ids, variables):
         self.case_ids = case_ids
@@ -65,10 +74,9 @@ class PipelineRunner:
         for cid in self.case_ids:
             try:
                 data = vitaldb.load_case(cid, self.variables, interval=1)
-                if data is not None and isinstance(data, np.ndarray) and data.shape[0] > 0:
+                if isinstance(data, np.ndarray) and data.shape[0] > 0:
                     all_data.append(data)
-            except Exception as e:
-                st.warning(f"Skipping case {cid} due to error: {e}")
+            except:
                 continue
 
         if not all_data:
@@ -79,59 +87,56 @@ class PipelineRunner:
         return trimmed_data, len(all_data)
 
 # ------------------------------
-# Helper function to filter valid cases
-def select_valid_case_ids(df_cases, df_trks, required_vars):
-    valid_ids = set(df_cases['caseid'])
-    for var in required_vars:
-        case_ids_with_var = set(df_trks[df_trks['tname'] == var]['caseid'])
-        valid_ids &= case_ids_with_var
-    return sorted(list(valid_ids))[:10]
-
-# ------------------------------
-# Load metadata
+# Load Metadata
 try:
-    with st.spinner("Loading metadata from VitalDB..."):
+    with st.spinner("📦 Loading metadata..."):
         df_cases = pd.read_csv("https://api.vitaldb.net/cases")
         df_trks = pd.read_csv("https://api.vitaldb.net/trks")
 except Exception as e:
-    st.error(f"Failed to load metadata: {e}")
+    st.error(f"❌ Failed to load metadata: {e}")
     st.stop()
 
+# ------------------------------
+# Case Selection
 case_ids = select_valid_case_ids(df_cases, df_trks, variables)
-
-st.subheader("🔧 Running Pipeline on Selected Cases")
-st.write(f"Using {len(case_ids)} valid case IDs.")
+st.subheader("📁 Case Selection")
+st.write(f"Found {len(case_ids)} valid case IDs.")
 
 if not case_ids:
-    st.error("No valid case IDs found. Try reducing the number of required signals.")
+    st.error("⚠️ No valid cases. Try fewer variables.")
     st.stop()
 
+# ------------------------------
+# Run Pipeline
 pipeline = PipelineRunner(case_ids, variables)
-data, used = pipeline.run()
+raw_data, used = pipeline.run()
 
-if data is None:
-    st.error("No valid data found.")
+if raw_data is None:
+    st.error("❌ No data available after loading cases.")
     st.stop()
 
-st.success(f"✅ Loaded {used} cases, shape: {data.shape}")
+st.success(f"✅ Loaded data from {used} cases. Shape: {raw_data.shape}")
 
-# Process signals
-processor = SignalProcessor(data)
-imputed = processor.interpolate_nans()
+# ------------------------------
+# Interpolate
+processor = SignalProcessor(raw_data)
+imputed_data = processor.interpolate_nans()
 
-# Plot
+# ------------------------------
+# Plot BIS/BIS
 bis_index = variables.index("BIS/BIS")
-bis_data = imputed[:, bis_index]
+bis_signal = imputed_data[:, bis_index]
 
-fig, ax = plt.subplots(figsize=(10, 5))
-ax.plot(bis_data, label="BIS/BIS", color="skyblue")
-ax.set_title("Interpolated BIS/BIS Signal")
+fig, ax = plt.subplots(figsize=(10, 4))
+ax.plot(bis_signal, label="Interpolated BIS/BIS", color="blue", alpha=0.7)
+ax.set_title("BIS/BIS Signal (Interpolated)")
 ax.set_xlabel("Time (s)")
 ax.set_ylabel("Value")
 ax.legend()
 st.pyplot(fig)
 
+# ------------------------------
 # Evaluation
-evaluator = Evaluator(raw_data=data, imputed_data=imputed)
-st.subheader("📊 BIS/BIS Summary")
+evaluator = Evaluator(raw_data, imputed_data)
+st.subheader("📊 Signal Summary")
 st.write(evaluator.summary(bis_index))
