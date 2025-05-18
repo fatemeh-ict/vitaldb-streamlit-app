@@ -8,6 +8,7 @@ import vitaldb
 # Settings
 st.set_page_config(page_title="VitalDB BIS/BIS Analysis", layout="centered")
 st.title("📊 BIS/BIS Analysis with Global Median")
+st.markdown("This histogram shows the distribution of BIS/BIS values across all selected cases, with the global median marked.")
 
 # ------------------------------
 # Configuration
@@ -38,8 +39,17 @@ case_ids = select_valid_case_ids(df_cases, df_trks, variables)
 # Load all data for selected cases
 all_data = []
 for cid in case_ids:
-    data = vitaldb.load_case(cid, variables, interval=1)
-    all_data.append(data)
+    try:
+        data = vitaldb.load_case(cid, variables, interval=1)
+        if data is not None and data.shape[0] > 0:
+            all_data.append(data)
+    except Exception as e:
+        st.warning(f"Case {cid} skipped due to error: {e}")
+
+# Check if we have valid data
+if not all_data:
+    st.error("No valid data loaded from the selected cases. Please check your case IDs or signal names.")
+    st.stop()
 
 # Trim to shortest length and concatenate
 min_len = min(d.shape[0] for d in all_data)
@@ -58,7 +68,7 @@ for i, var in enumerate(variables):
 
 # Show data overview
 st.subheader("📋 Global Statistics")
-st.write(f"Number of cases: {len(case_ids)}")
+st.write(f"Number of cases: {len(all_data)}")
 st.write(f"Trimmed data shape: {trimmed_data.shape}")
 st.write(f"Global median for BIS/BIS: {global_medians['BIS/BIS']:.2f}")
 
@@ -84,3 +94,4 @@ st.write({
     "Std Dev": round(np.std(bis_data), 2),
     "NaNs": int(len(trimmed_data[:, bis_index]) - len(bis_data))
 })
+
