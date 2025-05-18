@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import vitaldb
+from scipy.interpolate import interp1d
 
 # ------------------------------
 # Settings
@@ -22,13 +23,42 @@ variables = [
 
 # ------------------------------
 # Classes
+class SignalProcessor:
+    def __init__(self, data):
+        self.data = data.copy()
+
+    def interpolate_nans(self):
+        x = np.arange(self.data.shape[0])
+        for i in range(self.data.shape[1]):
+            signal = self.data[:, i]
+            if np.isnan(signal).sum() > 0:
+                mask = ~np.isnan(signal)
+                try:
+                    interp_func = interp1d(x[mask], signal[mask], kind='linear', fill_value="extrapolate")
+                    self.data[:, i] = interp_func(x)
+                except Exception as e:
+                    st.warning(f"Interpolation failed for variable index {i}: {e}")
+        return self.data
+
+class Evaluator:
+    def __init__(self, raw_data, imputed_data):
+        self.raw_data = raw_data
+        self.imputed_data = imputed_data
+
+    def summary(self, var_index):
+        raw = self.raw_data[:, var_index]
+        imp = self.imputed_data[:, var_index]
+        return {
+            "Mean (raw)": round(np.nanmean(raw), 2),
+            "Mean (imputed)": round(np.nanmean(imp), 2),
+            "NaNs (before)": int(np.isnan(raw).sum()),
+            "NaNs (after)": int(np.isnan(imp).sum())
+        }
+
 class PipelineRunner:
     def __init__(self, case_ids, variables):
         self.case_ids = case_ids
         self.variables = variables
-        self.global_medians = {}
-        self.global_mads = {}
-        self.results = []
 
     def run(self):
         all_data = []
@@ -42,28 +72,11 @@ class PipelineRunner:
                 continue
 
         if not all_data:
-            return None, None, 0
+            return None, 0
 
-        try:
-            min_len = min(d.shape[0] for d in all_data)
-            trimmed_data = np.concatenate([d[:min_len, :] for d in all_data], axis=0)
-        except Exception as e:
-            st.error(f"Error during trimming or concatenation: {e}")
-            return None, None, 0
-
-        for i, var in enumerate(self.variables):
-            sig = trimmed_data[:, i]
-            sig = sig[~np.isnan(sig)]
-            if len(sig) == 0:
-                self.global_medians[var] = np.nan
-                self.global_mads[var] = np.nan
-            else:
-                median = np.median(sig)
-                mad = np.median(np.abs(sig - median)) or 1e-6
-                self.global_medians[var] = median
-                self.global_mads[var] = mad
-
-        return trimmed_data, self.global_medians, len(all_data)
+        min_len = min(d.shape[0] for d in all_data)
+        trimmed_data = np.concatenate([d[:min_len, :] for d in all_data], axis=0)
+        return trimmed_data, len(all_data)
 
 # ------------------------------
 # Helper function to filter valid cases
@@ -93,39 +106,32 @@ if not case_ids:
     st.error("No valid case IDs found. Try reducing the number of required signals.")
     st.stop()
 
-runner = PipelineRunner(case_ids, variables)
-trimmed_data, global_medians, used_cases = runner.run()
+pipeline = PipelineRunner(case_ids, variables)
+data, used = pipeline.run()
 
-if trimmed_data is not None:
-    st.success(f"✅ Loaded and analyzed {used_cases} cases")
+if data is None:
+    st.error("No valid data found.")
+    st.stop()
 
-    st.subheader("📋 Global Statistics")
-    st.write(f"Trimmed data shape: {trimmed_data.shape}")
-    st.write(f"Global median for BIS/BIS: {global_medians['BIS/BIS']:.2f}")
+st.success(f"✅ Loaded {used} cases, shape: {data.shape}")
 
-    bis_index = variables.index("BIS/BIS")
-    bis_data = trimmed_data[:, bis_index]
-    bis_data = bis_data[~np.isnan(bis_data)]
+# Process signals
+processor = SignalProcessor(data)
+imputed = processor.interpolate_nans()
 
-    if len(bis_data) == 0:
-        st.warning("No valid BIS/BIS data to display.")
-    else:
-        fig, ax = plt.subplots(figsize=(10, 6))
-        ax.hist(bis_data, bins=50, color='skyblue', edgecolor='black', alpha=0.7)
-        ax.axvline(global_medians['BIS/BIS'], color='red', linestyle='--', linewidth=2,
-                   label=f"Global Median = {global_medians['BIS/BIS']:.2f}")
-        ax.set_xlabel("BIS/BIS values")
-        ax.set_ylabel("Frequency")
-        ax.set_title("Histogram of BIS/BIS with Global Median")
-        ax.legend()
-        st.pyplot(fig)
+# Plot
+bis_index = variables.index("BIS/BIS")
+bis_data = imputed[:, bis_index]
 
-        st.subheader("📊 Summary Statistics")
-        st.write({
-            "Mean": round(np.mean(bis_data), 2),
-            "Median": round(np.median(bis_data), 2),
-            "Std Dev": round(np.std(bis_data), 2),
-            "NaNs": int(len(trimmed_data[:, bis_index]) - len(bis_data))
-        })
-else:
-    st.error("No valid data found for analysis.")
+fig, ax = plt.subplots(figsize=(10, 5))
+ax.plot(bis_data, label="BIS/BIS", color="skyblue")
+ax.set_title("Interpolated BIS/BIS Signal")
+ax.set_xlabel("Time (s)")
+ax.set_ylabel("Value")
+ax.legend()
+st.pyplot(fig)
+
+# Evaluation
+evaluator = Evaluator(raw_data=data, imputed_data=imputed)
+st.subheader("📊 BIS/BIS Summary")
+st.write(evaluator.summary(bis_index))
