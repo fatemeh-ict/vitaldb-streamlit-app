@@ -1,4 +1,4 @@
-# vitaldb_streamlit_app.py - Multi-tab Streamlit Version
+# vitaldb_streamlit_app.py - Multi-tab Streamlit Version with Case Export and Global Stats on Sample
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -7,6 +7,7 @@ from scipy.interpolate import interp1d
 import vitaldb
 import seaborn as sns
 import os
+import io
 
 # ========== Classes ==========
 
@@ -28,7 +29,7 @@ class CaseSelector:
             valid_boluses = [col for col in self.intraoperative_boluses if col in df_cases_filtered.columns]
             df_cases_filtered = df_cases_filtered[~df_cases_filtered[valid_boluses].gt(0).any(axis=1)]
             valid_case_ids &= set(df_cases_filtered['caseid'])
-        return sorted(list(valid_case_ids))
+        return sorted(list(valid_case_ids)), df_cases_filtered[df_cases_filtered['caseid'].isin(valid_case_ids)]
 
 class SignalAnalyzer:
     def __init__(self, caseid, data, variable_names, global_medians=None, global_mads=None):
@@ -129,8 +130,6 @@ def load_metadata():
     )
 
 df_cases, df_trks = load_metadata()
-
-# Shared Configurations
 group1 = ["BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP", "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE"]
 group2 = ["BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP", "Orchestra/PPF20_RATE", "Orchestra/RFTN50_RATE"]
 drug_vars = ["intraop_mdz", "intraop_ftn", "intraop_epi", "intraop_phe"]
@@ -146,17 +145,17 @@ with tab1:
     limit = st.radio("Number of Cases to Analyze:", [10, "All"], horizontal=True)
 
     selector = CaseSelector(df_cases, df_trks, ane_type=selected_ane, required_variables=selected_signals, intraoperative_boluses=selected_drugs)
-    valid_ids = selector.select_valid_cases()
-    if limit == 10:
-        valid_ids = valid_ids[:10]
+    valid_ids, df_valid = selector.select_valid_cases()
     st.success(f"✅ {len(valid_ids)} valid cases selected.")
+    st.download_button("📥 Download Filtered Case IDs", pd.DataFrame({"caseid": valid_ids}).to_csv(index=False), file_name="valid_cases.csv")
 
 with tab2:
     st.subheader("Step 2: Analyze Signal Quality")
     if not valid_ids:
         st.warning("No valid cases. Adjust selection in Tab 1.")
         st.stop()
-    all_data = [vitaldb.load_case(cid, selected_signals, interval=1) for cid in valid_ids]
+    sample_ids = valid_ids[:10] if limit == 10 else valid_ids
+    all_data = [vitaldb.load_case(cid, selected_signals, interval=1) for cid in sample_ids]
     min_len = min(len(d) for d in all_data)
     merged_data = np.concatenate([d[:min_len] for d in all_data], axis=0)
     global_medians = {sig: np.nanmedian(merged_data[:, i]) for i, sig in enumerate(selected_signals)}
