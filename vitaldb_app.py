@@ -6,9 +6,8 @@ import vitaldb
 
 # ------------------------------
 # Settings
-st.set_page_config(page_title="VitalDB BIS/BIS Analysis", layout="centered")
-st.title("📊 BIS/BIS Analysis with Global Median")
-st.markdown("This histogram shows the distribution of BIS/BIS values across all selected cases, with the global median marked.")
+st.set_page_config(page_title="VitalDB Pipeline Analyzer", layout="centered")
+st.title("🧠 VitalDB Signal Analysis Pipeline")
 
 # ------------------------------
 # Configuration
@@ -21,12 +20,49 @@ variables = [
     "Orchestra/RFTN50_RATE"
 ]
 
+# Classes
+class PipelineRunner:
+    def __init__(self, case_ids, variables):
+        self.case_ids = case_ids
+        self.variables = variables
+        self.global_medians = {}
+        self.global_mads = {}
+        self.results = []
+
+    def run(self):
+        all_data = []
+        for cid in self.case_ids:
+            try:
+                data = vitaldb.load_case(cid, self.variables, interval=1)
+                if data is not None and data.shape[0] > 0:
+                    all_data.append(data)
+            except:
+                continue
+
+        if not all_data:
+            st.error("No valid data found.")
+            return None, None
+
+        min_len = min(d.shape[0] for d in all_data)
+        trimmed_data = np.concatenate([d[:min_len, :] for d in all_data], axis=0)
+
+        for i, var in enumerate(self.variables):
+            sig = trimmed_data[:, i]
+            sig = sig[~np.isnan(sig)]
+            median = np.median(sig)
+            mad = np.median(np.abs(sig - median)) or 1e-6
+            self.global_medians[var] = median
+            self.global_mads[var] = mad
+
+        return trimmed_data, self.global_medians
+
+# ------------------------------
 # Load metadata
 with st.spinner("Loading metadata from VitalDB..."):
     df_cases = pd.read_csv("https://api.vitaldb.net/cases")
     df_trks = pd.read_csv("https://api.vitaldb.net/trks")
 
-# Filter first 10 valid case IDs
+# Filter valid case IDs
 def select_valid_case_ids(df_cases, df_trks, required_vars):
     valid_ids = set(df_cases['caseid'])
     for var in required_vars:
@@ -36,62 +72,42 @@ def select_valid_case_ids(df_cases, df_trks, required_vars):
 
 case_ids = select_valid_case_ids(df_cases, df_trks, variables)
 
-# Load all data for selected cases
-all_data = []
-for cid in case_ids:
-    try:
-        data = vitaldb.load_case(cid, variables, interval=1)
-        if data is not None and data.shape[0] > 0:
-            all_data.append(data)
-    except Exception as e:
-        st.warning(f"Case {cid} skipped due to error: {e}")
+# ------------------------------
+# Run pipeline
+st.subheader("🔧 Running Pipeline on Selected Cases")
+st.write(f"Using {len(case_ids)} valid case IDs.")
 
-# Check if we have valid data
-if not all_data:
-    st.error("No valid data loaded from the selected cases. Please check your case IDs or signal names.")
-    st.stop()
+runner = PipelineRunner(case_ids, variables)
+trimmed_data, global_medians = runner.run()
 
-# Trim to shortest length and concatenate
-min_len = min(d.shape[0] for d in all_data)
-trimmed_data = np.concatenate([d[:min_len, :] for d in all_data], axis=0)
+if trimmed_data is not None:
+    # ------------------------------
+    # Show summary
+    st.subheader("📋 Global Statistics")
+    st.write(f"Trimmed data shape: {trimmed_data.shape}")
+    st.write(f"Global median for BIS/BIS: {global_medians['BIS/BIS']:.2f}")
 
-# Compute global medians and MADs
-global_medians = {}
-global_mads = {}
-for i, var in enumerate(variables):
-    sig = trimmed_data[:, i]
-    sig = sig[~np.isnan(sig)]
-    median = np.median(sig)
-    mad = np.median(np.abs(sig - median)) or 1e-6
-    global_medians[var] = median
-    global_mads[var] = mad
+    # ------------------------------
+    # Plot histogram
+    bis_index = variables.index("BIS/BIS")
+    bis_data = trimmed_data[:, bis_index]
+    bis_data = bis_data[~np.isnan(bis_data)]
 
-# Show data overview
-st.subheader("📋 Global Statistics")
-st.write(f"Number of cases: {len(all_data)}")
-st.write(f"Trimmed data shape: {trimmed_data.shape}")
-st.write(f"Global median for BIS/BIS: {global_medians['BIS/BIS']:.2f}")
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.hist(bis_data, bins=50, color='skyblue', edgecolor='black', alpha=0.7)
+    ax.axvline(global_medians['BIS/BIS'], color='red', linestyle='--', linewidth=2, label=f"Global Median = {global_medians['BIS/BIS']:.2f}")
+    ax.set_xlabel("BIS/BIS values")
+    ax.set_ylabel("Frequency")
+    ax.set_title("Histogram of BIS/BIS with Global Median")
+    ax.legend()
+    st.pyplot(fig)
 
-# Plot histogram for BIS/BIS
-bis_index = variables.index("BIS/BIS")
-bis_data = trimmed_data[:, bis_index]
-bis_data = bis_data[~np.isnan(bis_data)]
-
-fig, ax = plt.subplots(figsize=(10, 6))
-ax.hist(bis_data, bins=50, color='skyblue', edgecolor='black', alpha=0.7)
-ax.axvline(global_medians['BIS/BIS'], color='red', linestyle='--', linewidth=2, label=f"Global Median = {global_medians['BIS/BIS']:.2f}")
-ax.set_xlabel("BIS/BIS values")
-ax.set_ylabel("Frequency")
-ax.set_title("Histogram of BIS/BIS with Global Median")
-ax.legend()
-st.pyplot(fig)
-
-# Summary stats
-st.subheader("📊 Summary Statistics")
-st.write({
-    "Mean": round(np.mean(bis_data), 2),
-    "Median": round(np.median(bis_data), 2),
-    "Std Dev": round(np.std(bis_data), 2),
-    "NaNs": int(len(trimmed_data[:, bis_index]) - len(bis_data))
-})
-
+    # ------------------------------
+    # Summary stats
+    st.subheader("📊 Summary Statistics")
+    st.write({
+        "Mean": round(np.mean(bis_data), 2),
+        "Median": round(np.median(bis_data), 2),
+        "Std Dev": round(np.std(bis_data), 2),
+        "NaNs": int(len(trimmed_data[:, bis_index]) - len(bis_data))
+    })
