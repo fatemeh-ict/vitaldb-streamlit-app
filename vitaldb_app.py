@@ -1,91 +1,65 @@
 import streamlit as st
 import pandas as pd
-import vitaldb
+from pipeline_modules import CaseSelector
 
-# ------------------------ Page Setup ------------------------
-st.set_page_config(page_title="VitalDB Signal Pipeline", layout="wide")
-st.title("VitalDB Interactive Signal Processing Pipeline")
+# Load data from API
+@st.cache_data
 
-# ------------------------ Tabs ------------------------
-tabs = st.tabs(["1. Select Cases", "2. Signal Analysis", "3. Interpolation", "4. Evaluation & Plots"])
+def load_data():
+    df_cases = pd.read_csv("https://api.vitaldb.net/cases")
+    df_trks = pd.read_csv("https://api.vitaldb.net/trks")
+    df_labs = pd.read_csv("https://api.vitaldb.net/labs")
+    return df_cases, df_trks, df_labs
 
-# ------------------------ Tab 1: Case Selection ------------------------
-with tabs[0]:
-    st.subheader("Step 1: Select Anesthesia Type and Filter Drugs")
+df_cases, df_trks, df_labs = load_data()
 
-    ane_type = st.selectbox("Select Anesthesia Type", ["General", "Spinal", "Epidural", "MAC"])
+st.title("VitalDB Signal Preprocessing Tool")
 
-    all_drugs = ["intraop_mdz", "intraop_ftn", "intraop_epi", "intraop_phe", "intraop_eph"]
-    removed_drugs = st.multiselect("Select drugs to exclude (intraoperative boluses)", all_drugs, default=all_drugs)
+# Tab 1 - Data Filtering
+with st.expander("1. Data Filtering", expanded=True):
+    ane_type = st.selectbox("Select Anesthesia Type:", df_cases["ane_type"].dropna().unique())
 
-    st.markdown("---")
-    st.subheader("Automatic Variable Groups")
-    st.markdown("Two required variable groups are hardcoded for now. These will be used to select valid case IDs.")
+    intraoperative_boluses = [
+        "intraop_mdz", "intraop_ftn", "intraop_epi", "intraop_phe", "intraop_eph"
+    ]
+    removed_boluses = st.multiselect("Remove cases with these drugs:", options=intraoperative_boluses, default=intraoperative_boluses)
 
     required_variables_1 = [
         "Solar8000/NIBP_DBP", "Solar8000/NIBP_SBP", "BIS/BIS",
-        "Orchestra/PPF20_CE", "Orchestra/RFTN20_CE", "Orchestra/PPF20_RATE",
-        "Orchestra/RFTN20_RATE"
+        "Orchestra/PPF20_CE", "Orchestra/RFTN20_CE",
+        "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE"
     ]
 
     required_variables_2 = [
         "Solar8000/NIBP_DBP", "Solar8000/NIBP_SBP", "BIS/BIS",
-        "Orchestra/PPF20_CE", "Orchestra/RFTN50_CE", "Orchestra/PPF20_RATE",
-        "Orchestra/RFTN50_RATE"
+        "Orchestra/PPF20_CE", "Orchestra/RFTN50_CE",
+        "Orchestra/PPF20_RATE", "Orchestra/RFTN50_RATE"
     ]
 
-    # Load data once
-    @st.cache_data
-    def load_vitaldb_data():
-        return (
-            pd.read_csv("https://api.vitaldb.net/cases"),
-            pd.read_csv("https://api.vitaldb.net/trks"),
-            pd.read_csv("https://api.vitaldb.net/labs")
-        )
+    if st.button("Apply Filters"):
+        selector1 = CaseSelector(df_cases, df_trks, ane_type=ane_type, required_variables=required_variables_1, intraoperative_boluses=removed_boluses)
+        valid_ids_1 = set(selector1.select_valid_cases())
 
-    df_cases, df_trks, df_labs = load_vitaldb_data()
+        selector2 = CaseSelector(df_cases, df_trks, ane_type=ane_type, required_variables=required_variables_2, intraoperative_boluses=removed_boluses)
+        valid_ids_2 = set(selector2.select_valid_cases())
 
-    # Filter by anesthesia type
-    df_cases = df_cases[df_cases['ane_type'] == ane_type].copy()
+        valid_ids = sorted(list(valid_ids_1.union(valid_ids_2)))
 
-    # Drug removal logic
-    if removed_drugs:
-        df_cases = df_cases[~df_cases[removed_drugs].gt(0).any(axis=1)]
+        df_cases_filtered = df_cases[df_cases['caseid'].isin(valid_ids)].copy()
+        df_trks_filtered = df_trks[df_trks['caseid'].isin(valid_ids)].copy()
+        df_labs_filtered = df_labs[df_labs['caseid'].isin(valid_ids)].copy()
 
-    # Function to get case IDs containing required variables
-    def get_valid_case_ids(required_variables):
-        valid_ids = set(df_cases['caseid'])
-        for var in required_variables:
-            case_ids_with_var = set(df_trks[df_trks['tname'] == var]['caseid'])
-            valid_ids &= case_ids_with_var
-        return valid_ids
+        st.session_state["valid_ids"] = valid_ids
+        st.session_state["df_cases_filtered"] = df_cases_filtered
+        st.session_state["df_trks_filtered"] = df_trks_filtered
+        st.session_state["df_labs_filtered"] = df_labs_filtered
 
-    valid_ids_1 = get_valid_case_ids(required_variables_1)
-    valid_ids_2 = get_valid_case_ids(required_variables_2)
-    final_valid_ids = sorted(list(valid_ids_1.union(valid_ids_2)))
+        st.success(f"✅ Filtered {len(valid_ids)} valid case IDs.")
 
-    # Filter full dataframes
-    df_cases_filtered = df_cases[df_cases['caseid'].isin(final_valid_ids)].copy()
-    df_trks_filtered = df_trks[df_trks['caseid'].isin(final_valid_ids)].copy()
-    df_labs_filtered = df_labs[df_labs['caseid'].isin(final_valid_ids)].copy()
+        st.write("Filtered `df_cases` size:", df_cases_filtered.shape)
+        st.write("Filtered `df_trks` size:", df_trks_filtered.shape)
+        st.write("Filtered `df_labs` size:", df_labs_filtered.shape)
 
-    st.success(f"Total valid case IDs: {len(final_valid_ids)}")
-
-    with st.expander("📊 Show filtered dataset dimensions"):
-        st.write(f"df_cases_filtered: {df_cases_filtered.shape}")
-        st.write(f"df_trks_filtered: {df_trks_filtered.shape}")
-        st.write(f"df_labs_filtered: {df_labs_filtered.shape}")
-
-    st.download_button(
-        "Download Filtered Case Data",
-        df_cases_filtered.to_csv(index=False).encode('utf-8'),
-        file_name="filtered_cases.csv",
-        mime="text/csv"
-    )
-
-    # Save filtered data to session state for next steps
-    st.session_state.valid_ids = final_valid_ids
-    st.session_state.df_cases_filtered = df_cases_filtered
-    st.session_state.df_trks_filtered = df_trks_filtered
-    st.session_state.df_labs_filtered = df_labs_filtered
-    st.session_state.required_variables = list(set(required_variables_1 + required_variables_2))
+        st.download_button("Download Filtered Cases CSV", df_cases_filtered.to_csv(index=False), "filtered_cases.csv")
+        st.download_button("Download Filtered Trks CSV", df_trks_filtered.to_csv(index=False), "filtered_trks.csv")
+        st.download_button("Download Filtered Labs CSV", df_labs_filtered.to_csv(index=False), "filtered_labs.csv")
