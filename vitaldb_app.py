@@ -87,3 +87,60 @@ with st.expander("1. Data Filtering", expanded=True):
         st.download_button("Download Filtered Cases CSV", df_cases_filtered.to_csv(index=False), "filtered_cases.csv")
         st.download_button("Download Filtered Trks CSV", df_trks_filtered.to_csv(index=False), "filtered_trks.csv")
         st.download_button("Download Filtered Labs CSV", df_labs_filtered.to_csv(index=False), "filtered_labs.csv")
+
+##############################################################################################################
+# ✅ مرحله دوم: آنالیز سیگنال‌ها در تب جداگانه
+import numpy as np
+
+with st.expander("2. Signal Analysis", expanded=False):
+    if "df_cases_filtered" not in st.session_state or "valid_ids" not in st.session_state:
+        st.warning("⚠️ Please apply filters in Tab 1 first.")
+    else:
+        # انتخاب تعداد کیس برای بررسی
+        num_cases = st.slider("Select number of cases to analyze:", min_value=1, max_value=len(st.session_state["valid_ids"]), value=5)
+        selected_ids = st.session_state["valid_ids"][:num_cases]
+
+        # تعریف متغیرها
+        variables = ["BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP",
+                     "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE", "Orchestra/RFTN50_RATE"]
+
+        # محاسبه آمار سراسری (global medians and mads)
+        st.info("🔍 Computing global medians and MADs...")
+        all_data_list = []
+        for cid in selected_ids:
+            try:
+                data = vitaldb.load_case(cid, variables, interval=1)
+                all_data_list.append(data)
+            except:
+                continue
+
+        min_len = min(d.shape[0] for d in all_data_list)
+        trimmed_data = np.concatenate([d[:min_len, :] for d in all_data_list], axis=0)
+        global_medians = {}
+        global_mads = {}
+        for i, var in enumerate(variables):
+            sig = trimmed_data[:, i]
+            sig = sig[~np.isnan(sig)]
+            global_medians[var] = np.median(sig)
+            global_mads[var] = np.median(np.abs(sig - global_medians[var])) or 1e-6
+
+        st.success("✅ Global statistics computed.")
+
+        # اجرای تحلیل برای هر کیس و ترسیم نمودار
+        for cid in selected_ids:
+            st.subheader(f"Case ID: {cid}")
+            try:
+                data = vitaldb.load_case(cid, variables, interval=1)
+                analyzer = SignalAnalyzer(
+                    caseid=cid,
+                    data=data,
+                    variable_names=variables,
+                    global_medians=global_medians,
+                    global_mads=global_mads,
+                    plot=True
+                )
+                analyzer.analyze()
+                analyzer.plot()
+            except Exception as e:
+                st.error(f"❌ Error analyzing case {cid}: {e}")
+
