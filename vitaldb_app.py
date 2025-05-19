@@ -1,10 +1,32 @@
 import streamlit as st
 import pandas as pd
-from pipeline_modules import CaseSelector
 
-# Load data from API
+# ✅ تعریف کلاس CaseSelector به‌صورت مستقیم (به‌جای import کردن)
+class CaseSelector:
+    def __init__(self, df_cases, df_trks, ane_type="General", required_variables=None, intraoperative_boluses=None):
+        self.df_cases = df_cases.copy()
+        self.df_trks = df_trks.copy()
+        self.ane_type = ane_type
+        self.required_variables = required_variables or []
+        self.intraoperative_boluses = intraoperative_boluses or []
+
+    def select_valid_cases(self):
+        df_cases_filtered = self.df_cases[self.df_cases['ane_type'] == self.ane_type].copy()
+        valid_case_ids = set(df_cases_filtered['caseid'])
+
+        for var in self.required_variables:
+            trk_cases = set(self.df_trks[self.df_trks['tname'] == var]['caseid'])
+            valid_case_ids &= trk_cases
+
+        if self.intraoperative_boluses:
+            valid_boluses = [col for col in self.intraoperative_boluses if col in df_cases_filtered.columns]
+            df_cases_filtered = df_cases_filtered[~df_cases_filtered[valid_boluses].gt(0).any(axis=1)]
+            valid_case_ids &= set(df_cases_filtered['caseid'])
+
+        return sorted(list(valid_case_ids))
+
+# 📥 بارگذاری داده‌ها از API
 @st.cache_data
-
 def load_data():
     df_cases = pd.read_csv("https://api.vitaldb.net/cases")
     df_trks = pd.read_csv("https://api.vitaldb.net/trks")
@@ -13,9 +35,10 @@ def load_data():
 
 df_cases, df_trks, df_labs = load_data()
 
+# 🧪 عنوان اپلیکیشن
 st.title("VitalDB Signal Preprocessing Tool")
 
-# Tab 1 - Data Filtering
+# 📌 مرحله اول: فیلتر کردن داده‌ها
 with st.expander("1. Data Filtering", expanded=True):
     ane_type = st.selectbox("Select Anesthesia Type:", df_cases["ane_type"].dropna().unique())
 
@@ -49,6 +72,7 @@ with st.expander("1. Data Filtering", expanded=True):
         df_trks_filtered = df_trks[df_trks['caseid'].isin(valid_ids)].copy()
         df_labs_filtered = df_labs[df_labs['caseid'].isin(valid_ids)].copy()
 
+        # ذخیره‌سازی در session_state برای مراحل بعد
         st.session_state["valid_ids"] = valid_ids
         st.session_state["df_cases_filtered"] = df_cases_filtered
         st.session_state["df_trks_filtered"] = df_trks_filtered
