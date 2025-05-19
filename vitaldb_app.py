@@ -89,10 +89,11 @@ with st.expander("2. Signal Analysis", expanded=False):
 
             for caseid in selected_ids:
                 try:
-                    data = vitaldb.load_case(caseid, variables=[
-                        "BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP",
-                        "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE", "Orchestra/RFTN50_RATE"
-                    ])
+                    signal_list = [
+                              "BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP",
+                               "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE", "Orchestra/RFTN50_RATE"
+                               ]
+                    data = vitaldb.load_case(caseid, signal_list, interval=1)
                     df = pd.DataFrame(data, columns=[
                         "BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP",
                         "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE", "Orchestra/RFTN50_RATE"
