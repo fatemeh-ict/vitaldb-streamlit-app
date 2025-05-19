@@ -190,64 +190,22 @@ with st.expander("2. Signal Analysis", expanded=False):
         selected_ids = st.multiselect("Select Case IDs to Analyze", st.session_state["valid_ids"], default=st.session_state["valid_ids"][:3])
 
         if st.button("Analyze Selected Signals"):
-            import numpy as np
-            from plotly.subplots import make_subplots
-            import plotly.graph_objects as go
+            signal_list = [
+                "BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP",
+                "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE", "Orchestra/RFTN50_RATE"
+            ]
 
-            summaries = []
+            global_medians, global_mads = compute_global_stats(selected_ids, signal_list)
 
             for caseid in selected_ids:
                 try:
-                    signal_list = [
-                              "BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP",
-                               "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE", "Orchestra/RFTN50_RATE"
-                               ]
                     data = vitaldb.load_case(caseid, signal_list, interval=1)
-                    df = pd.DataFrame(data, columns=[
-                        "BIS/BIS", "Solar8000/NIBP_SBP", "Solar8000/NIBP_DBP",
-                        "Orchestra/PPF20_RATE", "Orchestra/RFTN20_RATE", "Orchestra/RFTN50_RATE"
-                    ])
-                    df["time"] = np.arange(len(df))
+                    analyzer = SignalAnalyzer(caseid, data, signal_list, global_medians, global_mads)
                     
+                    df_result = analyzer.analyze()
                     st.subheader(f"📊 Case ID: {caseid}")
-                    fig = make_subplots(rows=6, cols=1, shared_xaxes=True,
-                                        vertical_spacing=0.03, subplot_titles=df.columns[:-1])
-
-                    summary_case = []
-
-                    for i, col in enumerate(df.columns[:-1]):
-                        sig = df[col]
-                        time = df["time"]
-                        row = i + 1
-
-                        nans = sig.isna()
-                        outliers = (sig < 20) | (sig > 120)
-                        jumps = np.abs(np.diff(sig.fillna(method='pad'))) > 30
-                        jumps = np.insert(jumps, 0, False)
-
-                        fig.add_trace(go.Scatter(x=time, y=sig, mode='lines+markers', name=col), row=row, col=1)
-                        fig.add_trace(go.Scatter(x=time[nans], y=[sig.min() - 5]*nans.sum(),
-                                                 mode='markers', name="NaNs", marker=dict(color='gray')), row=row, col=1)
-                        fig.add_trace(go.Scatter(x=time[outliers], y=sig[outliers],
-                                                 mode='markers', name="Outliers", marker=dict(color='purple')), row=row, col=1)
-                        fig.add_trace(go.Scatter(x=time[jumps], y=sig[jumps],
-                                                 mode='markers', name="Jumps", marker=dict(color='orange')), row=row, col=1)
-
-                        summary_case.append({
-                            "Signal": col,
-                            "NaNs": int(nans.sum()),
-                            "NaN %": round(100 * nans.sum() / len(sig), 2),
-                            "Outliers": int(outliers.sum()),
-                            "Outlier %": round(100 * outliers.sum() / len(sig), 2),
-                            "Jumps": int(jumps.sum()),
-                            "Jump %": round(100 * jumps.sum() / len(sig), 2)
-                        })
-
-                    fig.update_layout(height=300 * 6, title=f"Signal Analysis - Case {caseid}")
-                    st.plotly_chart(fig)
-
-                    st.dataframe(pd.DataFrame(summary_case))
-                    summaries.extend(summary_case)
+                    st.dataframe(df_result.style.format({"nan_pct": "{:.1f}%", "long_gap_pct": "{:.1f}%" }))
+                    st.plotly_chart(analyzer.plot(), use_container_width=True)
 
                 except Exception as e:
                     st.error(f"❌ Error processing case {caseid}: {e}")
@@ -256,4 +214,3 @@ with st.expander("2. Signal Analysis", expanded=False):
             st.info("Select case IDs and press 'Analyze Selected Signals'")
     else:
         st.warning("⚠️ Please apply filters first in Tab 1.")
-
