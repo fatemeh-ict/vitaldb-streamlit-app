@@ -92,3 +92,128 @@ with tabs[0]:
         st.download_button("⬇️ Download Filtered Cases", st.session_state['df_cases_filtered'].to_csv(index=False), "filtered_cases.csv")
         st.download_button("⬇️ Download Filtered Tracks", st.session_state['df_trks_filtered'].to_csv(index=False), "filtered_trks.csv")
         st.download_button("⬇️ Download Filtered Labs", st.session_state['df_labs_filtered'].to_csv(index=False), "filtered_labs.csv")
+
+
+# ==========================
+# SignalAnalyzer Class
+# ==========================
+class SignalAnalyzer:
+    def __init__(self, caseid, data, variable_names):
+        self.caseid = caseid
+        self.data = data
+        self.variable_names = variable_names
+        self.issues = {var: {'nan': 0, 'gap': 0, 'outlier': 0, 'jump': 0} for var in variable_names}
+
+    def analyze(self):
+        for i, var in enumerate(self.variable_names):
+            signal = self.data[:, i]
+            self.issues[var]['nan'] = int(np.isnan(signal).sum())
+            self.issues[var]['gap'] = int(np.sum(np.diff(np.where(np.isnan(signal), 1, 0)) > 1))
+            self.issues[var]['outlier'] = int((signal < 0).sum())
+            diffs = np.diff(signal)
+            median_diff = np.median(diffs)
+            mad_diff = np.median(np.abs(diffs - median_diff)) or 1e-6
+            jump_idx = np.where(np.abs(diffs - median_diff) > 3.5 * mad_diff)[0]
+            self.issues[var]['jump'] = int(len(jump_idx))
+        return self.issues
+
+# ==========================
+# SignalProcessor Class
+# ==========================
+class SignalProcessor:
+    def __init__(self, data, variable_names):
+        self.data = data.copy()
+        self.variable_names = variable_names
+
+    def interpolate(self):
+        x = np.arange(self.data.shape[0])
+        for i, var in enumerate(self.variable_names):
+            signal = self.data[:, i]
+            if np.isnan(signal).sum() > 0:
+                valid_mask = ~np.isnan(signal)
+                if valid_mask.sum() > 1:
+                    f = interp1d(x[valid_mask], signal[valid_mask], kind='linear', fill_value='extrapolate')
+                    self.data[:, i] = f(x)
+        return self.data
+
+# ==========================
+# Evaluator Class
+# ==========================
+class Evaluator:
+    def __init__(self, raw_data, imputed_data, variable_names):
+        self.raw = pd.DataFrame(raw_data, columns=variable_names)
+        self.imputed = pd.DataFrame(imputed_data, columns=variable_names)
+        self.variable_names = variable_names
+
+    def compute(self):
+        rows = []
+        for var in self.variable_names:
+            rows.append({
+                'variable': var,
+                'mean_before': self.raw[var].mean(),
+                'mean_after': self.imputed[var].mean(),
+                'nan_before': self.raw[var].isna().sum(),
+                'nan_after': self.imputed[var].isna().sum(),
+            })
+        return pd.DataFrame(rows)
+
+# ==========================
+# Tab 2: Signal Quality
+# ==========================
+with tabs[1]:
+    st.header("Step 2: Signal Quality Analysis")
+    if 'case_ids' in st.session_state:
+        selected_case = st.selectbox("Select a case to analyze", st.session_state['case_ids'])
+        variables = st.session_state["selected_vars"]
+        data = vitaldb.load_case(selected_case, variables, interval=1)
+        analyzer = SignalAnalyzer(caseid=selected_case, data=data, variable_names=variables)
+        results = analyzer.analyze()
+
+        for var in variables:
+            st.subheader(f"🔍 {var}")
+            st.write(results[var])
+        st.session_state["raw_data"] = data
+    else:
+        st.warning("Please select cases first.")
+
+# ==========================
+# Tab 3: Interpolation
+# ==========================
+with tabs[2]:
+    st.header("Step 3: Interpolate Missing Data")
+    if 'raw_data' in st.session_state:
+        processor = SignalProcessor(data=st.session_state['raw_data'], variable_names=st.session_state['selected_vars'])
+        interpolated = processor.interpolate()
+        st.session_state["interpolated"] = interpolated
+        st.success("Interpolation completed.")
+        st.line_chart(interpolated)
+    else:
+        st.warning("Analyze a case first.")
+
+# ==========================
+# Tab 4: Evaluation
+# ==========================
+with tabs[3]:
+    st.header("Step 4: Evaluation Before and After Imputation")
+    if 'interpolated' in st.session_state and 'raw_data' in st.session_state:
+        evaluator = Evaluator(
+            raw_data=st.session_state['raw_data'],
+            imputed_data=st.session_state['interpolated'],
+            variable_names=st.session_state['selected_vars']
+        )
+        df_eval = evaluator.compute()
+        st.dataframe(df_eval)
+        st.session_state['df_eval'] = df_eval
+    else:
+        st.warning("Run interpolation first.")
+
+# ==========================
+# Tab 5: Export Results
+# ==========================
+with tabs[4]:
+    st.header("Step 5: Download Evaluation Results")
+    if 'df_eval' in st.session_state:
+        csv = st.session_state['df_eval'].to_csv(index=False).encode('utf-8')
+        st.download_button("⬇️ Download Evaluation CSV", csv, "evaluation_results.csv", "text/csv")
+    else:
+        st.info("No results to export.")
