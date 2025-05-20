@@ -217,3 +217,128 @@ with tabs[4]:
         st.download_button("⬇️ Download Evaluation CSV", csv, "evaluation_results.csv", "text/csv")
     else:
         st.info("No results to export.")
+
+
+# ==========================
+# Updated SignalAnalyzer Class (from Colab logic)
+# ==========================
+class SignalAnalyzer:
+    def __init__(self, caseid, data, variable_names):
+        self.caseid = caseid
+        self.data = data
+        self.variable_names = variable_names
+        self.issues = {var: {'nan': [], 'gap': [], 'outlier': [], 'jump': []} for var in variable_names}
+
+    def analyze(self):
+        for i, var in enumerate(self.variable_names):
+            signal = self.data[:, i]
+            nan_idx = np.where(np.isnan(signal))[0]
+            self.issues[var]['nan'] = nan_idx.tolist()
+
+            # Gap detection (list of dicts with start and length)
+            gap_list = []
+            is_gap = False
+            start_idx = 0
+            for idx, val in enumerate(signal):
+                if np.isnan(val):
+                    if not is_gap:
+                        is_gap = True
+                        start_idx = idx
+                else:
+                    if is_gap:
+                        gap_len = idx - start_idx
+                        gap_list.append({"start": start_idx, "length": gap_len})
+                        is_gap = False
+            if is_gap:
+                gap_len = len(signal) - start_idx
+                gap_list.append({"start": start_idx, "length": gap_len})
+            self.issues[var]['gap'] = gap_list
+
+            # Outlier detection (based on MAD or hard rules)
+            outliers = []
+            if "RATE" in var:
+                outliers = np.where(signal < 0)[0].tolist()
+            elif "BIS" in var:
+                outliers = np.where((signal <= 0) | (signal > 100))[0].tolist()
+            elif "NIBP" in var:
+                outliers = np.where(signal <= 0)[0].tolist()
+                sig = signal[~np.isnan(signal)]
+                if len(sig) > 0:
+                    med = np.median(sig)
+                    mad = np.median(np.abs(sig - med)) or 1e-6
+                    mad_idx = np.where(np.abs(signal - med) > 3.5 * mad)[0].tolist()
+                    outliers.extend(mad_idx)
+            self.issues[var]['outlier'] = sorted(set(outliers))
+
+            # Jump detection (using MAD on diff)
+            diffs = np.diff(signal)
+            if len(diffs) > 0:
+                median_diff = np.median(diffs)
+                mad_diff = np.median(np.abs(diffs - median_diff)) or 1e-6
+                jump_idx = np.where(np.abs(diffs - median_diff) > 3.5 * mad_diff)[0]
+                self.issues[var]['jump'] = jump_idx.tolist()
+        return self.issues
+
+# ==========================
+# Tab 2: Updated Signal Quality with Plotly
+# ==========================
+with tabs[1]:
+    st.header("Step 2: Signal Quality Analysis (Real + Plot)")
+
+    target_vars = ["BIS/BIS", "Solar8000/NIBP_DBP", "Solar8000/NIBP_SBP",
+                   "Orchestra/RFTN50_RATE", "Orchestra/RFTN20_RATE", "Orchestra/PPF20_RATE"]
+
+    if 'case_ids' in st.session_state:
+        selected_case = st.selectbox("Select a case to analyze", st.session_state['case_ids'], key="select_case_tab2")
+        data = vitaldb.load_case(selected_case, target_vars, interval=1)
+        analyzer = SignalAnalyzer(caseid=selected_case, data=data, variable_names=target_vars)
+        results = analyzer.analyze()
+        df = pd.DataFrame(data, columns=target_vars)
+        df["time"] = np.arange(len(df))
+
+        fig = make_subplots(rows=len(target_vars), cols=1, shared_xaxes=True, vertical_spacing=0.03,
+                            subplot_titles=target_vars)
+
+        for i, var in enumerate(target_vars):
+            row = i + 1
+            signal = df[var]
+            time = df["time"]
+
+            # Plot signal line
+            fig.add_trace(go.Scatter(x=time, y=signal, mode='lines', name=var), row=row, col=1)
+
+            # Plot NaNs
+            if results[var]['nan']:
+                fig.add_trace(go.Scatter(x=time[results[var]['nan']],
+                                         y=[signal.min() - 5] * len(results[var]['nan']),
+                                         mode='markers', marker=dict(color='gray', symbol='line-ns-open', size=6),
+                                         name='NaNs', showlegend=(i==0)), row=row, col=1)
+
+            # Plot Outliers
+            if results[var]['outlier']:
+                fig.add_trace(go.Scatter(x=time[results[var]['outlier']],
+                                         y=signal[results[var]['outlier']],
+                                         mode='markers', marker=dict(color='purple', symbol='star', size=7),
+                                         name='Outliers', showlegend=(i==0)), row=row, col=1)
+
+            # Plot Jumps
+            if results[var]['jump']:
+                fig.add_trace(go.Scatter(x=time[results[var]['jump']],
+                                         y=signal[results[var]['jump']],
+                                         mode='markers', marker=dict(color='orange', symbol='x', size=7),
+                                         name='Jumps', showlegend=(i==0)), row=row, col=1)
+
+            # Plot Gaps
+            for gap in results[var]['gap']:
+                start = gap['start']
+                end = gap['start'] + gap['length']
+                fig.add_shape(type="rect",
+                              x0=time[start], x1=time[end - 1],
+                              y0=signal.min(), y1=signal.max(),
+                              fillcolor="red", opacity=0.15,
+                              line=dict(width=0), row=row, col=1)
+
+        fig.update_layout(height=250 * len(target_vars), title=f"Signal Quality - Case {selected_case}")
+        st.plotly_chart(fig, use_container_width=True)
+    else:
+        st.warning("Please select cases in Tab 1 first.")
