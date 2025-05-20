@@ -342,3 +342,95 @@ with tabs[1]:
         st.plotly_chart(fig, use_container_width=True)
     else:
         st.warning("Please select cases in Tab 1 first.")
+
+
+# ==========================
+# Accurate SignalAnalyzer from Colab
+# ==========================
+class SignalAnalyzer:
+    def __init__(self, caseid, data, variable_names, global_medians=None, global_mads=None):
+        self.caseid = caseid
+        self.data = data
+        self.variable_names = variable_names
+        self.global_medians = global_medians or {}
+        self.global_mads = global_mads or {}
+        self.issues = {
+            var: {
+                'nan': [],
+                'gap': [],
+                'classified_gaps': [],
+                'outlier': [],
+                'outlier_values': [],
+                'jump': []
+            } for var in variable_names
+        }
+
+    def analyze(self):
+        for i, var in enumerate(self.variable_names):
+            signal = self.data[:, i]
+            original = signal.copy()
+
+            # NaN Detection
+            nan_idx = np.where(np.isnan(signal))[0]
+            self.issues[var]['nan'] = nan_idx.tolist()
+
+            # Gap Detection
+            gap_list = []
+            is_gap = False
+            start_idx = 0
+            for idx, val in enumerate(signal):
+                if np.isnan(val):
+                    if not is_gap:
+                        is_gap = True
+                        start_idx = idx
+                else:
+                    if is_gap:
+                        gap_len = idx - start_idx
+                        gap_list.append({"start": start_idx, "length": gap_len})
+                        is_gap = False
+            if is_gap:
+                gap_len = len(signal) - start_idx
+                gap_list.append({"start": start_idx, "length": gap_len})
+            self.issues[var]['gap'] = gap_list
+
+            # Classify gaps as short/long using MAD
+            if gap_list:
+                lengths = np.array([g["length"] for g in gap_list])
+                median_gap = np.median(lengths)
+                mad_gap = np.median(np.abs(lengths - median_gap)) or 1e-6
+                for g in gap_list:
+                    g["type"] = "long" if g["length"] > median_gap + 3.5 * mad_gap else "short"
+                self.issues[var]['classified_gaps'] = gap_list
+
+            # Outlier Detection
+            outliers = []
+            if "RATE" in var:
+                outliers = np.where(signal < 0)[0].tolist()
+            elif "BIS" in var:
+                outliers = np.where((signal <= 0) | (signal > 100))[0].tolist()
+            elif "NIBP" in var:
+                invalid_idx = np.where(signal <= 0)[0].tolist()
+                outliers.extend(invalid_idx)
+                if var in self.global_medians and var in self.global_mads:
+                    median = self.global_medians[var]
+                    mad = self.global_mads[var] or 1e-6
+                    mad_idx = np.where(np.abs(signal - median) > 3.5 * mad)[0].tolist()
+                    outliers.extend(mad_idx)
+            elif var in self.global_medians and var in self.global_mads:
+                median = self.global_medians[var]
+                mad = self.global_mads[var] or 1e-6
+                mad_idx = np.where(np.abs(signal - median) > 3.5 * mad)[0].tolist()
+                outliers.extend(mad_idx)
+
+            outliers = sorted(set(outliers))
+            self.issues[var]['outlier'] = outliers
+            self.issues[var]['outlier_values'] = original[outliers].tolist()
+
+            # Jump Detection using MAD
+            diffs = np.diff(signal)
+            if len(diffs) > 0:
+                median_diff = np.median(diffs)
+                mad_diff = np.median(np.abs(diffs - median_diff)) or 1e-6
+                jump_idx = np.where(np.abs(diffs - median_diff) > 3.5 * mad_diff)[0]
+                self.issues[var]['jump'] = jump_idx.tolist()
+        return self.issues
