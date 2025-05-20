@@ -591,6 +591,7 @@ class PipelineRunner:
 
 # Rewriting Tab 1 with signal group selection, anesthesia type, and bolus exclusions + download buttons
 
+
 with tabs[0]:
     st.header("Step 1: Select Valid Cases")
 
@@ -665,9 +666,3 @@ with tabs[0]:
         st.download_button("⬇️ Download Filtered Labs",
                            df_labs_filtered.to_csv(index=False),
                            file_name="filtered_labs.csv")
-
-
-with open("/mnt/data/tab1_complete.py", "w") as f:
-    f.write(tab1_code)
-
-"/mnt/data/tab1_complete.py"
