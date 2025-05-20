@@ -719,7 +719,7 @@ with tabs[1]:
                 )
 
                 # محاسبه میانگین و MAD جهانی فقط برای این کیس
-                runner.compute_global_stats([selected_case], st.session_state["variables"])
+                runner.compute_global_stats(["valid_ids"], st.session_state["variables"])
 
                 analyzer = SignalAnalyzer(
                     caseid=selected_case,
@@ -757,7 +757,7 @@ with tabs[2]:
                     df_cases=st.session_state["df_cases"],
                     df_cases_filtered=st.session_state["df_cases_filtered"]
                 )
-                runner.compute_global_stats([selected_case_interp], st.session_state["variables"])
+                runner.compute_global_stats(["valid_ids"], st.session_state["variables"])
 
                 analyzer = SignalAnalyzer(
                     caseid=selected_case_interp,
