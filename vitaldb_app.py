@@ -697,3 +697,164 @@ with tabs[0]:
         st.download_button("⬇️ Download Filtered Labs",
                            df_labs_filtered.to_csv(index=False),
                            file_name="filtered_labs.csv")
+
+#---------------------------------------
+with tabs[1]:
+    st.header("Step 2: Signal Quality Analysis")
+
+    if "valid_ids" not in st.session_state or "variables" not in st.session_state:
+        st.warning("لطفاً ابتدا در مرحله 1 کیس‌ها را انتخاب کنید.")
+    else:
+        selected_case = st.selectbox("✅ انتخاب Case ID", st.session_state["valid_ids"])
+
+        if st.button("🔍 تحلیل سیگنال‌های این کیس"):
+            try:
+                data = vitaldb.load_case(selected_case, st.session_state["variables"], interval=1)
+
+                runner = PipelineRunner(
+                    case_ids=[selected_case],
+                    variables=st.session_state["variables"],
+                    df_cases=st.session_state["df_cases"],
+                    df_cases_filtered=st.session_state["df_cases_filtered"]
+                )
+
+                # محاسبه میانگین و MAD جهانی فقط برای این کیس
+                runner.compute_global_stats([selected_case], st.session_state["variables"])
+
+                analyzer = SignalAnalyzer(
+                    caseid=selected_case,
+                    data=data,
+                    variable_names=st.session_state["variables"],
+                    global_medians=runner.global_medians,
+                    global_mads=runner.global_mads,
+                    plot=True
+                )
+                analyzer.analyze()
+                analyzer.plot()
+
+                st.success("✅ تحلیل کیفیت سیگنال با موفقیت انجام شد.")
+
+            except Exception as e:
+                st.error(f"❌ خطا در بارگذاری یا تحلیل کیس {selected_case}: {e}")
+#-------------------------------------
+with tabs[2]:
+    st.header("Step 3: Signal Interpolation & Alignment")
+
+    if "valid_ids" not in st.session_state or "variables" not in st.session_state:
+        st.warning("لطفاً ابتدا مراحل 1 و 2 را تکمیل کنید.")
+    else:
+        selected_case_interp = st.selectbox("🔁 انتخاب Case برای درون‌یابی", st.session_state["valid_ids"], key="interp_case")
+
+        if st.button("⚙️ انجام درون‌یابی و هم‌ترازی سیگنال"):
+            try:
+                # بارگذاری داده خام
+                raw_data = vitaldb.load_case(selected_case_interp, st.session_state["variables"], interval=1)
+
+                # اجرای تحلیل مجدد برای استفاده از global MAD/median
+                runner = PipelineRunner(
+                    case_ids=[selected_case_interp],
+                    variables=st.session_state["variables"],
+                    df_cases=st.session_state["df_cases"],
+                    df_cases_filtered=st.session_state["df_cases_filtered"]
+                )
+                runner.compute_global_stats([selected_case_interp], st.session_state["variables"])
+
+                analyzer = SignalAnalyzer(
+                    caseid=selected_case_interp,
+                    data=raw_data,
+                    variable_names=st.session_state["variables"],
+                    global_medians=runner.global_medians,
+                    global_mads=runner.global_mads,
+                    plot=False
+                )
+                analyzer.analyze()
+
+                processor = SignalProcessor(
+                    data=analyzer.data,
+                    issues=analyzer.issues,
+                    variable_names=st.session_state["variables"],
+                    gap_strategy='interpolate_short',
+                    long_gap_strategy='nan',
+                    interp_method='auto',
+                    global_std_dict={var: np.std(raw_data[:, i][~np.isnan(raw_data[:, i])]) for i, var in enumerate(st.session_state["variables"])}
+                )
+                imputed_data = processor.process()
+
+                # ذخیره برای مرحله بعدی
+                st.session_state["imputed_data"] = imputed_data
+                st.session_state["raw_data"] = raw_data
+                st.session_state["selected_case_interp"] = selected_case_interp
+
+                st.success("✅ سیگنال با موفقیت درون‌یابی و هم‌تراز شد.")
+
+                st.write("📊 نمونه‌ای از داده‌های خام و پس از درون‌یابی:")
+                st.dataframe(pd.DataFrame(imputed_data, columns=st.session_state["variables"]).head())
+
+            except Exception as e:
+                st.error(f"❌ خطا در درون‌یابی: {e}")
+#-------------------------------------------------
+with tabs[3]:
+    st.header("Step 4: Evaluation of Imputed Signals")
+
+    if "raw_data" not in st.session_state or "imputed_data" not in st.session_state:
+        st.warning("⚠️ ابتدا مرحله درون‌یابی را انجام دهید.")
+    else:
+        try:
+            evaluator = Evaluator(
+                raw_data=st.session_state["raw_data"],
+                imputed_data=st.session_state["imputed_data"],
+                variable_names=st.session_state["variables"]
+            )
+
+            stats_df, length_df = evaluator.compute_stats(
+                raw_length=st.session_state["raw_data"].shape[0]
+            )
+
+            st.subheader("📈 آماره‌های قبل و بعد از درون‌یابی")
+            st.dataframe(stats_df)
+
+            st.subheader("📏 اطلاعات طول سیگنال")
+            st.table(length_df)
+
+            st.subheader("📉 نمودار مقایسه‌ای سیگنال‌ها")
+            fig = evaluator.plot_comparison(max_points=1000)
+            st.pyplot(fig)
+
+            # ذخیره برای خروجی نهایی
+            st.session_state["eval_stats"] = stats_df
+
+        except Exception as e:
+            st.error(f"❌ خطا در تحلیل مقایسه‌ای: {e}")
+#----------------------------------------------
+with tabs[4]:
+    st.header("Step 5: Export Final Results")
+
+    if "eval_stats" not in st.session_state or "imputed_data" not in st.session_state:
+        st.warning("⚠️ ابتدا مراحل قبلی را تکمیل کنید.")
+    else:
+        # نمایش اطلاعات آماری
+        st.subheader("📊 Final Evaluation Statistics")
+        st.dataframe(st.session_state["eval_stats"])
+
+        # ایجاد دیتافریم از داده درون‌یابی‌شده
+        df_imputed = pd.DataFrame(st.session_state["imputed_data"], columns=st.session_state["variables"])
+        df_imputed["time"] = np.arange(len(df_imputed))
+        st.subheader("📄 Interpolated Signal Data")
+        st.dataframe(df_imputed.head(10))
+
+        # دانلود فایل‌ها
+        st.subheader("⬇️ Download Files")
+
+        st.download_button(
+            "📥 Download Imputed Signal Data (CSV)",
+            df_imputed.to_csv(index=False),
+            file_name="imputed_signals.csv"
+        )
+
+        st.download_button(
+            "📥 Download Evaluation Statistics (CSV)",
+            st.session_state["eval_stats"].to_csv(index=False),
+            file_name="evaluation_statistics.csv"
+        )
+
+        st.success("✅ فایل‌های خروجی آماده دانلود هستند.")
