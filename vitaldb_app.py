@@ -172,9 +172,9 @@ class SignalAnalyzer:
         fig.update_layout(title=f"Signal Diagnostics - Case {self.caseid}", height=300 * len(self.variable_names))
         fig.show()
         return fig
-=====================
-interpolate
-==============================
+#=====================
+#interpolate
+#==============================
 class SignalProcessor:
     def __init__(self, data, issues, variable_names,
                  gap_strategy='interpolate_short',
@@ -272,9 +272,9 @@ class SignalProcessor:
             self.interpolate_short_gaps()
         self.align_signals_soft()
         return self.data
-====================================
-evaluator
-===========================
+#====================================
+#evaluator
+#===========================
 class Evaluator:
     def __init__(self, raw_data, imputed_data, variable_names):
 
@@ -341,9 +341,9 @@ class Evaluator:
 
         return self.stats
 
-=========================
-plot
-===============================
+#=========================
+#plot
+#===============================
 
 class StatisticsPlotter:
     def __init__(self, output_folder="plots_statistics"):
@@ -464,9 +464,9 @@ class StatisticsPlotter:
 
             except Exception as e:
                 print(f" Error plotting categorical column {col}: {e}")
-===================
-pipline
-=====================
+#===================
+#pipline
+#=====================
 class PipelineRunner:
 
     def __init__(self, case_ids, variables, drug_vars=None, df_cases=None, df_cases_filtered=None):
@@ -587,7 +587,7 @@ class PipelineRunner:
 
         return pd.concat(self.results, ignore_index=True)
 
-------------------------------------------------------------------
+#------------------------------------------------------------------
 
 # Rewriting Tab 1 with signal group selection, anesthesia type, and bolus exclusions + download buttons
 
