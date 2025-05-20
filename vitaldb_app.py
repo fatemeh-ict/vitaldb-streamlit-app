@@ -6,11 +6,41 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 from scipy.interpolate import interp1d
 import vitaldb
+import matplotlib.pyplot as plt
+import seaborn as sns
 
 # ==========================
 # Class: CaseSelector
 # ==========================
 
+class CaseSelector:
+    def __init__(self, df_cases, df_trks, ane_type="General", required_variables=None, intraoperative_boluses=None):
+        self.df_cases = df_cases.copy()
+        self.df_trks = df_trks.copy()
+        self.ane_type = ane_type
+        self.required_variables = required_variables or []
+        self.intraoperative_boluses = intraoperative_boluses or []
+
+    def select_valid_cases(self):
+      # filter by anesthesia type
+        df_cases_filtered = self.df_cases[self.df_cases['ane_type'] == self.ane_type].copy()
+        valid_case_ids = set(df_cases_filtered['caseid'])
+
+        # check if you have the required variables in df_trks
+        for var in self.required_variables:
+            trk_cases = set(self.df_trks[self.df_trks['tname'] == var]['caseid'])
+            valid_case_ids &= trk_cases
+
+        # remove cases that received specific medications
+        if self.intraoperative_boluses:
+            valid_boluses = [col for col in self.intraoperative_boluses if col in df_cases_filtered.columns]
+            df_cases_filtered = df_cases_filtered[~df_cases_filtered[valid_boluses].gt(0).any(axis=1)]
+            valid_case_ids &= set(df_cases_filtered['caseid'])
+
+        return sorted(list(valid_case_ids))
+#======================
+#signalanalyze
+#===========================
 class SignalAnalyzer:
     def __init__(self, caseid, data, variable_names, thresholds=None, plot=True, global_medians=None, global_mads=None):
         self.caseid = caseid
@@ -170,7 +200,7 @@ class SignalAnalyzer:
 
         fig.update_xaxes(title_text="Time (s)")
         fig.update_layout(title=f"Signal Diagnostics - Case {self.caseid}", height=300 * len(self.variable_names))
-        fig.show()
+        st.plotly_chart(fig, use_container_width=True)
         return fig
 #=====================
 #interpolate
@@ -591,6 +621,7 @@ class PipelineRunner:
 
 # Rewriting Tab 1 with signal group selection, anesthesia type, and bolus exclusions + download buttons
 
+tabs = st.tabs(["1️⃣ Select Cases", "2️⃣ Signal Quality", "3️⃣ Interpolation", "4️⃣ Evaluation", "5️⃣ Export"])
 
 with tabs[0]:
     st.header("Step 1: Select Valid Cases")
