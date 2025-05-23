@@ -689,6 +689,14 @@ with tabs[0]:
         st.session_state["df_labs_filtered"] = df_labs_filtered
         st.session_state["variables"] = variables
 
+
+        # محاسبه میانگین و MAD گلوبال روی 50 کیس اول
+        sample_ids = st.session_state["valid_ids"][:10]
+        global_medians, global_mads = get_global_stats_cached(sample_ids, variables)
+        st.session_state["global_medians"] = global_medians
+        st.session_state["global_mads"] = global_mads
+
+
         st.success(f"{len(valid_ids)} valid case(s) found.")
         st.dataframe(df_cases_filtered.head(10))
 
@@ -725,7 +733,11 @@ with tabs[1]:
                 )
 
                 # محاسبه میانگین و MAD جهانی فقط برای این کیس
-                global_medians, global_mads = get_global_stats_cached([selected_case], st.session_state["variables"])
+                # global_medians, global_mads = get_global_stats_cached([selected_case_interp], st.session_state["variables"])
+
+                global_medians = st.session_state["global_medians"]
+                global_mads = st.session_state["global_mads"]
+
 
 
                 analyzer = SignalAnalyzer(
@@ -764,7 +776,12 @@ with tabs[2]:
                     df_cases=st.session_state["df_cases"],
                     df_cases_filtered=st.session_state["df_cases_filtered"]
                 )
-                global_medians, global_mads = get_global_stats_cached([selected_case_interp], st.session_state["variables"])
+
+                #global_medians, global_mads = get_global_stats_cached([selected_case], st.session_state["variables"])
+
+                global_medians = st.session_state["global_medians"]
+                global_mads = st.session_state["global_mads"]
+
 
 
                 analyzer = SignalAnalyzer(
