@@ -732,8 +732,8 @@ with tabs[1]:
                     caseid=selected_case,
                     data=data,
                     variable_names=st.session_state["variables"],
-                    global_medians=runner.global_medians,
-                    global_mads=runner.global_mads,
+                    global_medians=global_medians,
+                    global_mads=global_mads,
                     plot=True
                 )
                 analyzer.analyze()
@@ -771,8 +771,8 @@ with tabs[2]:
                     caseid=selected_case_interp,
                     data=raw_data,
                     variable_names=st.session_state["variables"],
-                    global_medians=runner.global_medians,
-                    global_mads=runner.global_mads,
+                    global_medians=global_medians,
+                    global_mads=global_mads,
                     plot=False
                 )
                 analyzer.analyze()
