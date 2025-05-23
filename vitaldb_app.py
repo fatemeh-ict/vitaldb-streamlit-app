@@ -618,6 +618,12 @@ class PipelineRunner:
         return pd.concat(self.results, ignore_index=True)
 
 #------------------------------------------------------------------
+@st.cache_data
+def get_global_stats_cached(case_ids, variables):
+    runner = PipelineRunner(case_ids, variables)
+    runner.compute_global_stats(case_ids, variables)
+    return runner.global_medians, runner.global_mads
+
 
 # Rewriting Tab 1 with signal group selection, anesthesia type, and bolus exclusions + download buttons
 
@@ -719,7 +725,7 @@ with tabs[1]:
                 )
 
                 # محاسبه میانگین و MAD جهانی فقط برای این کیس
-                runner.compute_global_stats(st.session_state["valid_ids"], st.session_state["variables"])
+                global_medians, global_mads = get_global_stats_cached([selected_case], st.session_state["variables"])
 
 
                 analyzer = SignalAnalyzer(
@@ -758,7 +764,7 @@ with tabs[2]:
                     df_cases=st.session_state["df_cases"],
                     df_cases_filtered=st.session_state["df_cases_filtered"]
                 )
-                runner.compute_global_stats(st.session_state["valid_ids"], st.session_state["variables"])
+                global_medians, global_mads = get_global_stats_cached([selected_case_interp], st.session_state["variables"])
 
 
                 analyzer = SignalAnalyzer(
