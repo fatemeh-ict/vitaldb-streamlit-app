@@ -687,7 +687,10 @@ with tabs[0]:
         st.session_state["df_cases_filtered"] = df_cases_filtered
         st.session_state["df_trks_filtered"] = df_trks_filtered
         st.session_state["df_labs_filtered"] = df_labs_filtered
-        st.session_state["variables"] = variables
+        # st.session_state["variables"] = variables
+        st.session_state["variables"] = ['BIS/BIS','Solar8000/NIBP_SBP','Solar8000/NIBP_DBP','Orchestra/PPF20_RATE',
+                                         'Orchestra/RFTN20_RATE']
+        st.write("✅ متغیرهای انتخاب‌شده:", selected_variables)
 
 
         # محاسبه میانگین و MAD گلوبال روی 50 کیس اول
@@ -710,7 +713,9 @@ with tabs[0]:
 
         st.download_button("⬇️ Download Filtered Labs",
                            df_labs_filtered.to_csv(index=False),
-                           file_name="filtered_labs.csv")
+                           file_name="filtered_labs.csv")        
+        
+
 
 #---------------------------------------
 with tabs[1]:
