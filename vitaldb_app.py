@@ -751,6 +751,8 @@ with tabs[1]:
                 analyzer.analyze()
                 fig= analyzer.plot()
                 st.pyplot(fig)
+                st.write("📊 Type of fig:", type(fig))
+
 
                 st.success("✅ تحلیل کیفیت سیگنال با موفقیت انجام شد.")
 
