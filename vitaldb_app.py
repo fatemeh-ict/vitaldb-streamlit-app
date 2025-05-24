@@ -690,7 +690,7 @@ with tabs[0]:
         # st.session_state["variables"] = variables
         st.session_state["variables"] = ['BIS/BIS','Solar8000/NIBP_SBP','Solar8000/NIBP_DBP','Orchestra/PPF20_RATE',
                                          'Orchestra/RFTN20_RATE']
-        st.write("✅ متغیرهای انتخاب‌شده:", selected_variables)
+        
 
 
         # محاسبه میانگین و MAD گلوبال روی 50 کیس اول
@@ -701,6 +701,7 @@ with tabs[0]:
 
 
         st.success(f"{len(valid_ids)} valid case(s) found.")
+        st.success(f"{len(df_case_filtered)} case filtered found.")
         st.dataframe(df_cases_filtered.head(10))
 
         st.download_button("⬇️ Download Filtered Cases",
