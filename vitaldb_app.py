@@ -715,6 +715,8 @@ with tabs[0]:
 #---------------------------------------
 with tabs[1]:
     st.header("Step 2: Signal Quality Analysis")
+    st.write("📌 تب دوم در حال اجرا است")
+
 
     if "valid_ids" not in st.session_state or "variables" not in st.session_state:
         st.warning("لطفاً ابتدا در مرحله 1 کیس‌ها را انتخاب کنید.")
@@ -722,8 +724,12 @@ with tabs[1]:
         selected_case = st.selectbox("✅ انتخاب Case ID", st.session_state["valid_ids"])
 
         if st.button("🔍 تحلیل سیگنال‌های این کیس"):
+            st.write("✅ دکمه تحلیل کلیک شد")
+
             try:
                 data = vitaldb.load_case(selected_case, st.session_state["variables"], interval=1)
+                st.write("📥 داده لود شد:", data.shape if hasattr(data, 'shape') else "بدون shape")
+
 
                 runner = PipelineRunner(
                     case_ids=[selected_case],
@@ -748,10 +754,15 @@ with tabs[1]:
                     global_mads=global_mads,
                     plot=True
                 )
+                st.write("🔬 Analyzer ساخته شد")
+
                 analyzer.analyze()
+                st.write("✅ تحلیل انجام شد")
                 fig= analyzer.plot()
-                st.plotly_chart(fig, use_container_width=True)
                 st.write("📊 Type of fig:", type(fig))
+                st.plotly_chart(fig, use_container_width=True)
+                st.write("✅ نمودار رسم شد")
+                
 
 
                 st.success("✅ تحلیل کیفیت سیگنال با موفقیت انجام شد.")
