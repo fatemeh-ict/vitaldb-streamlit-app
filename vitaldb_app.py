@@ -759,6 +759,9 @@ with tabs[1]:
                 analyzer.analyze()
                 st.write("✅ تحلیل انجام شد")
                 fig= analyzer.plot()
+                st.write("📉 تعداد trace در fig:", len(fig.data))
+                for i, trace in enumerate(fig.data):
+                    st.write(f"📌 trace {i}: name={trace.name}, points={len(trace.x)}")
                 st.write("📊 Type of fig:", type(fig))
                 st.plotly_chart(fig, use_container_width=True)
                 st.write("✅ نمودار رسم شد")
