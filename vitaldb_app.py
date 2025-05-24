@@ -749,7 +749,8 @@ with tabs[1]:
                     plot=True
                 )
                 analyzer.analyze()
-                analyzer.plot()
+                fig= analyzer.plot()
+                st.pyplot(fig)
 
                 st.success("✅ تحلیل کیفیت سیگنال با موفقیت انجام شد.")
 
