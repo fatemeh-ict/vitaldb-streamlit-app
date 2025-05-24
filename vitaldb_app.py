@@ -200,7 +200,7 @@ class SignalAnalyzer:
 
         fig.update_xaxes(title_text="Time (s)")
         fig.update_layout(title=f"Signal Diagnostics - Case {self.caseid}", height=300 * len(self.variable_names))
-        st.plotly_chart(fig, use_container_width=True)
+        # st.plotly_chart(fig, use_container_width=True)
         return fig
 #=====================
 #interpolate
@@ -750,7 +750,7 @@ with tabs[1]:
                 )
                 analyzer.analyze()
                 fig= analyzer.plot()
-                st.plotly_chart(fig)
+                st.plotly_chart(fig, use_container_width=True)
                 st.write("📊 Type of fig:", type(fig))
 
 
