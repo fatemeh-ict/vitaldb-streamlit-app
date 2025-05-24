@@ -750,7 +750,7 @@ with tabs[1]:
                 )
                 analyzer.analyze()
                 fig= analyzer.plot()
-                st.pyplot(fig)
+                st.plotly_chart(fig)
                 st.write("📊 Type of fig:", type(fig))
 
 
