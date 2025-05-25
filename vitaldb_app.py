@@ -943,7 +943,7 @@ with tabs[4]:
 
 #==================================
 with tabs[5]:
-    st.header("📊 مقایسه آماری پیش از فیلتر و پس از آن / درون‌یابی")
+    st.header("Step 6: Analysis")
 
     plotter = StatisticsPlotter()
 
