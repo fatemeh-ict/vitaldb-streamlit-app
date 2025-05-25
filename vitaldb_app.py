@@ -200,7 +200,7 @@ class SignalAnalyzer:
 
         fig.update_xaxes(title_text="Time (s)")
         fig.update_layout(title=f"Signal Diagnostics - Case {self.caseid}", height=300 * len(self.variable_names))
-        # st.plotly_chart(fig, use_container_width=True)
+        st.plotly_chart(fig, use_container_width=True)
         return fig
 #=====================
 #interpolate
@@ -733,6 +733,8 @@ with tabs[1]:
 
             try:
                 data = vitaldb.load_case(selected_case, st.session_state["variables"], interval=1)
+                st.write("📊 نمونه‌ای از داده:")
+                st.dataframe(pd.DataFrame(data, columns=st.session_state["variables"]).head())
                 st.write("📥 داده لود شد:", data.shape if hasattr(data, 'shape') else "بدون shape")
 
 
@@ -768,6 +770,9 @@ with tabs[1]:
                 for i, trace in enumerate(fig.data):
                     st.write(f"📌 trace {i}: name={trace.name}, points={len(trace.x)}")
                 st.write("📊 Type of fig:", type(fig))
+                st.write("📉 تعداد trace در fig:", len(fig.data))
+                for i, trace in enumerate(fig.data):
+                    st.write(f"📌 trace {i}: name={trace.name}, points={len(trace.x)}")
                 st.plotly_chart(fig, use_container_width=True)
                 st.write("✅ نمودار رسم شد")
                 
