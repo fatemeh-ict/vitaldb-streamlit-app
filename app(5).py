@@ -434,3 +434,33 @@ class SignalAnalyzer:
                 jump_idx = np.where(np.abs(diffs - median_diff) > 3.5 * mad_diff)[0]
                 self.issues[var]['jump'] = jump_idx.tolist()
         return self.issues
+
+
+
+# with tabs[5]:
+    st.header("Step 6: Analysis")
+
+    plotter = StatisticsPlotter()
+
+    df_stats = st.session_state.get("eval_stats", None)
+    df_all = st.session_state.get("df_all", None)
+    df_filtered = st.session_state.get("df_filtered", None)
+    
+    if df_stats is not None:
+        if "caseid" in df_stats.columns:
+            st.subheader("📌 تحلیل آماری سیگنال‌ها برای Case ها")
+            plotter.plot_case_summary(df_stats, max_cases=10)
+        else:
+            st.warning("❗ ستون 'caseid' در df_stats پیدا نشد. فقط آمار یک کیس تحلیل شده است.")
+            st.dataframe(df_stats)
+
+    if df_all is not None and df_filtered is not None:
+        st.subheader("📌 مقایسه ویژگی‌های عددی")
+        numeric_cols = st.multiselect("انتخاب ستون‌های عددی:", df_all.select_dtypes(include=np.number).columns.tolist())
+        if numeric_cols:
+            plotter.compare_numerical(df_all, df_filtered, numeric_cols)
+
+        st.subheader("📌 مقایسه ویژگی‌های دسته‌ای")
+        categorical_cols = st.multiselect("انتخاب ستون‌های دسته‌ای:", df_all.select_dtypes(include='object').columns.tolist())
+        if categorical_cols:
+            plotter.compare_categorical(df_all, df_filtered, categorical_cols)
