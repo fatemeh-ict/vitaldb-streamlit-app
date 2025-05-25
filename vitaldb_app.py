@@ -910,6 +910,12 @@ with tabs[3]:
 
         except Exception as e:
             st.error(f"❌ خطا در تحلیل مقایسه‌ای: {e}")
+            
+        st.session_state["eval_stats"] = stats_df
+        st.session_state["raw_data"] = st.session_state["raw_data"]  # اختیاری چون قبلاً هست ولی واضح‌تر می‌شود
+        st.session_state["imputed_data"] = st.session_state["imputed_data"]
+
+
 #----------------------------------------------
 with tabs[4]:
     st.header("Step 5: Export Final Results")
@@ -950,28 +956,40 @@ with tabs[4]:
 with tabs[5]:
     st.header("Step 6: Analysis")
 
+    # چک اینکه دیتاها وجود داشته باشند
+    if "eval_stats" not in st.session_state:
+        st.warning("⚠️ ابتدا مرحله ارزیابی (تب ۴) را کامل کنید.")
+        st.stop()
+
+    if "df_cases" not in st.session_state or "df_cases_filtered" not in st.session_state:
+        st.warning("⚠️ اطلاعات فیلترشده وجود ندارد. لطفاً تب اول را اجرا کنید.")
+        st.stop()
+
+    # بارگذاری دیتاها
+    df_stats = st.session_state["eval_stats"]
+    df_all = st.session_state["df_cases"]
+    df_filtered = st.session_state["df_cases_filtered"]
+
+    # ایجاد پلاتر
     plotter = StatisticsPlotter()
 
-    df_stats = st.session_state.get("eval_stats", None)
-    df_all = st.session_state.get("df_all", None)
-    df_filtered = st.session_state.get("df_filtered", None)
-    
-    if df_stats is not None:
-        if "caseid" in df_stats.columns:
-            st.subheader("📌 تحلیل آماری سیگنال‌ها برای Case ها")
-            plotter.plot_case_summary(df_stats, max_cases=10)
-        else:
-            st.warning("❗ ستون 'caseid' در df_stats پیدا نشد. فقط آمار یک کیس تحلیل شده است.")
-            st.dataframe(df_stats)
+    # بخش اول: نمودار آماری مقایسه‌ای برای میانگین، میانه، انحراف معیار
+    st.subheader("📊 تغییرات آماری سیگنال‌ها قبل و بعد از درون‌یابی")
+    plotter.plot_case_summary(df_stats, max_cases=10)
 
-    if df_all is not None and df_filtered is not None:
-        st.subheader("📌 مقایسه ویژگی‌های عددی")
-        numeric_cols = st.multiselect("انتخاب ستون‌های عددی:", df_all.select_dtypes(include=np.number).columns.tolist())
-        if numeric_cols:
-            plotter.compare_numerical(df_all, df_filtered, numeric_cols)
+    # بخش دوم: مقایسه ویژگی‌های عددی
+    st.subheader("📈 مقایسه ویژگی‌های عددی بیماران")
+    numeric_cols = st.multiselect("انتخاب ستون‌های عددی برای مقایسه:", 
+                                  df_all.select_dtypes(include=np.number).columns.tolist(),
+                                  default=['age', 'bmi', 'weight', 'height'])
+    if numeric_cols:
+        plotter.compare_numerical(df_all, df_filtered, numeric_cols)
 
-        st.subheader("📌 مقایسه ویژگی‌های دسته‌ای")
-        categorical_cols = st.multiselect("انتخاب ستون‌های دسته‌ای:", df_all.select_dtypes(include='object').columns.tolist())
-        if categorical_cols:
-            plotter.compare_categorical(df_all, df_filtered, categorical_cols)
+    # بخش سوم: مقایسه ویژگی‌های دسته‌ای
+    st.subheader("🧩 مقایسه ویژگی‌های دسته‌ای بیماران")
+    categorical_cols = st.multiselect("انتخاب ستون‌های دسته‌ای برای مقایسه:",
+                                      df_all.select_dtypes(include='object').columns.tolist(),
+                                      default=['sex', 'ane_type', 'optype', 'department', 'position'])
+    if categorical_cols:
+        plotter.compare_categorical(df_all, df_filtered, categorical_cols)
 
