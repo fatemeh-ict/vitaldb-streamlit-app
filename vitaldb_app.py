@@ -157,6 +157,8 @@ class SignalAnalyzer:
         for i, var in enumerate(self.variable_names):
             row = i + 1
             signal = df[var]
+            if signal.dropna().empty or signal.min() == signal.max():
+                continue  # سیگنال کاملاً خالی یا بدون تغییر است
             time = df["time"]
             unit = signal_units.get(var, "") if signal_units else ""
 
@@ -735,6 +737,14 @@ with tabs[1]:
                 data = vitaldb.load_case(selected_case, st.session_state["variables"], interval=1)
                 st.write("📊 نمونه‌ای از داده:")
                 st.dataframe(pd.DataFrame(data, columns=st.session_state["variables"]).head())
+                df = pd.DataFrame(data, columns=st.session_state["variables"])
+                # چک کردن درصد NaN در هر ستون
+                st.write("📉 درصد داده‌های NaN در هر ستون:")
+                st.write(df.isna().mean())
+                # بررسی اینکه همه ستون‌ها خالی نباشند
+                if df.dropna(how='all').empty:
+                    st.warning("📛 همه ستون‌ها فقط مقادیر NaN دارند. لطفاً یک Case دیگر انتخاب کنید.")
+                    st.stop()
                 st.write("📥 داده لود شد:", data.shape if hasattr(data, 'shape') else "بدون shape")
 
 
@@ -766,6 +776,13 @@ with tabs[1]:
                 analyzer.analyze()
                 st.write("✅ تحلیل انجام شد")
                 fig= analyzer.plot()
+
+                if fig is None or not fig.data:
+                    st.warning("📛 نموداری تولید نشد. احتمالاً داده‌ای برای نمایش وجود ندارد.")
+                else:
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.success("✅ تحلیل کیفیت سیگنال با موفقیت انجام شد.")
+                    
                 st.write("📉 تعداد trace در fig:", len(fig.data))
                 for i, trace in enumerate(fig.data):
                     st.write(f"📌 trace {i}: name={trace.name}, points={len(trace.x)}")
@@ -773,8 +790,8 @@ with tabs[1]:
                 st.write("📉 تعداد trace در fig:", len(fig.data))
                 for i, trace in enumerate(fig.data):
                     st.write(f"📌 trace {i}: name={trace.name}, points={len(trace.x)}")
-                st.plotly_chart(fig, use_container_width=True)
-                st.write("✅ نمودار رسم شد")
+                # st.plotly_chart(fig, use_container_width=True)
+                # st.write("✅ نمودار رسم شد")
                 
 
 
