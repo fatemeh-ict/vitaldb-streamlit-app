@@ -371,7 +371,7 @@ class Evaluator:
         plt.tight_layout()
         # plt.show()
 
-        return fig, self.state
+        return fig
 
 #=========================
 #plot
@@ -463,7 +463,8 @@ class StatisticsPlotter:
                 plt.ylabel('Frequency')
 
                 plt.tight_layout()
-                plt.savefig(f"{self.output_folder}/{col}_numerical_comparison.png")
+                st.pyplot(fig)
+                # plt.savefig(f"{self.output_folder}/{col}_numerical_comparison.png")
                 plt.close()
                 print(f"Numerical comparison saved for: {col}")
 
