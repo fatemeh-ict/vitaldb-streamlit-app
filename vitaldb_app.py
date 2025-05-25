@@ -371,7 +371,7 @@ class Evaluator:
         plt.tight_layout()
         # plt.show()
 
-        return fig, df_state
+        return fig, self.state
 
 #=========================
 #plot
