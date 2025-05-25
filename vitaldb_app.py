@@ -379,8 +379,9 @@ class Evaluator:
 
 class StatisticsPlotter:
     def __init__(self, output_folder="plots_statistics"):
-        self.output_folder = output_folder
-        os.makedirs(output_folder, exist_ok=True)
+        # self.output_folder = output_folder
+        # os.makedirs(output_folder, exist_ok=True)
+        pass
     # Plot mean, median, std before and after interpolation for each case
     def plot_case_summary(self, df_stats, max_cases=None,rel_change_threshold=0.2):
        caseids = df_stats['caseid'].unique()
@@ -435,9 +436,10 @@ class StatisticsPlotter:
                 axes[2].grid(True)
 
                 plt.tight_layout()
-                plt.savefig(f"{self.output_folder}/case_{caseid}_statistics_comparison.png")
+                st.pyplot(fig)
+                # plt.savefig(f"{self.output_folder}/case_{caseid}_statistics_comparison.png")
                 plt.close()
-                print(f" Saved plot for Case {caseid} due to significant change.")
+                # print(f" Saved plot for Case {caseid} due to significant change.")
 
             else:
                 print(f" No significant change for Case {caseid}, plot skipped.")
@@ -490,7 +492,8 @@ class StatisticsPlotter:
                 plt.xticks(rotation=45)
 
                 plt.tight_layout()
-                plt.savefig(f"{self.output_folder}/{col}_categorical_comparison.png")
+                st.pyplot(fig)
+                # plt.savefig(f"{self.output_folder}/{col}_categorical_comparison.png")
                 plt.close()
                 print(f"Categorical comparison saved for: {col}")
 
@@ -934,3 +937,31 @@ with tabs[4]:
         )
 
         st.success("✅ فایل‌های خروجی آماده دانلود هستند.")
+
+#=====================
+
+#==================================
+with tabs[5]:
+    st.header("📊 مقایسه آماری پیش از فیلتر و پس از آن / درون‌یابی")
+
+    plotter = StatisticsPlotter()
+
+    df_stats = st.session_state.get("eval_stats", None)
+    df_all = st.session_state.get("df_all", None)
+    df_filtered = st.session_state.get("df_filtered", None)
+
+    if df_stats is not None:
+        st.subheader("📌 تحلیل آماری سیگنال‌ها برای Case ها")
+        plotter.plot_case_summary(df_stats, max_cases=10)
+
+    if df_all is not None and df_filtered is not None:
+        st.subheader("📌 مقایسه ویژگی‌های عددی")
+        numeric_cols = st.multiselect("انتخاب ستون‌های عددی:", df_all.select_dtypes(include=np.number).columns.tolist())
+        if numeric_cols:
+            plotter.compare_numerical(df_all, df_filtered, numeric_cols)
+
+        st.subheader("📌 مقایسه ویژگی‌های دسته‌ای")
+        categorical_cols = st.multiselect("انتخاب ستون‌های دسته‌ای:", df_all.select_dtypes(include='object').columns.tolist())
+        if categorical_cols:
+            plotter.compare_categorical(df_all, df_filtered, categorical_cols)
+
