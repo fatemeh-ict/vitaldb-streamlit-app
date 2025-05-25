@@ -201,7 +201,7 @@ class SignalAnalyzer:
                                   row=row, col=1)
 
         fig.update_xaxes(title_text="Time (s)")
-        fig.update_layout(title=f"Signal Diagnostics - Case {self.caseid}", height=300 * len(self.variable_names))
+        fig.update_layout(title=f"Signal Diagnostics - Case {self.caseid}", height=200 * len(self.variable_names))
         st.plotly_chart(fig, use_container_width=True)
         return fig
 #=====================
@@ -807,6 +807,13 @@ with tabs[2]:
         st.warning("لطفاً ابتدا مراحل 1 و 2 را تکمیل کنید.")
     else:
         selected_case_interp = st.selectbox("🔁 انتخاب Case برای درون‌یابی", st.session_state["valid_ids"], key="interp_case")
+        interp_method_option = st.selectbox(
+        "🔧 روش درون‌یابی سیگنال را انتخاب کنید:",
+        options=["auto", "linear", "cubic", "slinear"],
+        index=0,  # پیش‌فرض: auto
+        help="در حالت 'auto' روش مناسب برای هر متغیر به‌صورت خودکار انتخاب می‌شود."
+        )
+
 
         if st.button("⚙️ انجام درون‌یابی و هم‌ترازی سیگنال"):
             try:
@@ -844,7 +851,7 @@ with tabs[2]:
                     variable_names=st.session_state["variables"],
                     gap_strategy='interpolate_short',
                     long_gap_strategy='nan',
-                    interp_method='auto',
+                    interp_method=interp_method_option,
                     global_std_dict={var: np.std(raw_data[:, i][~np.isnan(raw_data[:, i])]) for i, var in enumerate(st.session_state["variables"])}
                 )
                 imputed_data = processor.process()
