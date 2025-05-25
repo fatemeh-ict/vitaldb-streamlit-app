@@ -620,8 +620,12 @@ class PipelineRunner:
                 print(f"Error in case {cid}: {e}")
 
     def get_summary(self):
+        df_all = pd.concat(self.results, ignore_index=True)
+        assert 'caseid' in df_all.columns, "Missing 'caseid' in stats dataframe"
+        return df_all
 
-        return pd.concat(self.results, ignore_index=True)
+
+        # return pd.concat(self.results, ignore_index=True)
 
 #------------------------------------------------------------------
 @st.cache_data
