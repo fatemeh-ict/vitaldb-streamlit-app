@@ -955,10 +955,14 @@ with tabs[5]:
     df_stats = st.session_state.get("eval_stats", None)
     df_all = st.session_state.get("df_all", None)
     df_filtered = st.session_state.get("df_filtered", None)
-
+    
     if df_stats is not None:
-        st.subheader("📌 تحلیل آماری سیگنال‌ها برای Case ها")
-        plotter.plot_case_summary(df_stats, max_cases=10)
+        if "caseid" in df_stats.columns:
+            st.subheader("📌 تحلیل آماری سیگنال‌ها برای Case ها")
+            plotter.plot_case_summary(df_stats, max_cases=10)
+        else:
+            st.warning("❗ ستون 'caseid' در df_stats پیدا نشد. فقط آمار یک کیس تحلیل شده است.")
+            st.dataframe(df_stats)
 
     if df_all is not None and df_filtered is not None:
         st.subheader("📌 مقایسه ویژگی‌های عددی")
