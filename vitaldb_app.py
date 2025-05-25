@@ -894,6 +894,8 @@ with tabs[3]:
             stats_df, length_df = evaluator.compute_stats(
                 raw_length=st.session_state["raw_data"].shape[0]
             )
+            stats_df["caseid"] = st.session_state["selected_case_interp"]
+
 
             st.subheader("📈 آماره‌های قبل و بعد از درون‌یابی")
             st.dataframe(stats_df)
