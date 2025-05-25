@@ -384,6 +384,9 @@ class StatisticsPlotter:
         pass
     # Plot mean, median, std before and after interpolation for each case
     def plot_case_summary(self, df_stats, max_cases=None,rel_change_threshold=0.2):
+       if 'caseid' not in df_stats.columns:
+           print("⚠️ Warning: 'caseid' column not found in df_stats. Skipping plot_case_summary.")
+           return
        caseids = df_stats['caseid'].unique()
        if max_cases:
           caseids = caseids[:max_cases]
@@ -463,6 +466,7 @@ class StatisticsPlotter:
                 plt.ylabel('Frequency')
 
                 plt.tight_layout()
+                fig = plt.gcf()
                 st.pyplot(fig)
                 # plt.savefig(f"{self.output_folder}/{col}_numerical_comparison.png")
                 plt.close()
@@ -493,6 +497,7 @@ class StatisticsPlotter:
                 plt.xticks(rotation=45)
 
                 plt.tight_layout()
+                fig = plt.gcf()
                 st.pyplot(fig)
                 # plt.savefig(f"{self.output_folder}/{col}_categorical_comparison.png")
                 plt.close()
@@ -620,12 +625,8 @@ class PipelineRunner:
                 print(f"Error in case {cid}: {e}")
 
     def get_summary(self):
-        df_all = pd.concat(self.results, ignore_index=True)
-        assert 'caseid' in df_all.columns, "Missing 'caseid' in stats dataframe"
-        return df_all
 
-
-        # return pd.concat(self.results, ignore_index=True)
+        return pd.concat(self.results, ignore_index=True)
 
 #------------------------------------------------------------------
 @st.cache_data
