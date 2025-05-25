@@ -369,9 +369,9 @@ class Evaluator:
 
         plt.xlabel("Time (samples)")
         plt.tight_layout()
-        plt.show()
+        # plt.show()
 
-        return self.stats
+        return fig
 
 #=========================
 #plot
