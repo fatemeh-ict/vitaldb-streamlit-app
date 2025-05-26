@@ -816,6 +816,15 @@ with tabs[1]:
                          }
 
                 fig = analyzer.plot(signal_units=signal_units)
+                if fig is None:
+                    st.error("❌ plot() returned None.")
+                elif not hasattr(fig, 'data') or len(fig.data) == 0:
+                    st.error("❌ plot() is empty — no data in fig.")
+                else:
+                    st.success(f"✅ Plot created with {len(fig.data)} trace(s).")
+                    for i, trace in enumerate(fig.data):
+                        st.write(f"🔹 Trace {i}: name = {trace.name}, points = {len(trace.x)}")
+
                 if fig and fig.data:
                     st.plotly_chart(fig, use_container_width=True)
                     st.success(" Signal quality analysis completed successfully.")
