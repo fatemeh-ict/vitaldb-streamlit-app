@@ -221,7 +221,7 @@ class SignalAnalyzer:
 
         fig.update_xaxes(title_text="Time (s)")
         fig.update_layout(title=f"Signal Diagnostics - Case {self.caseid}", height=200 * len(self.variable_names))
-        st.plotly_chart(fig, use_container_width=True)
+        # st.plotly_chart(fig, use_container_width=True)
         return fig
 #=====================
 #interpolate
@@ -807,19 +807,26 @@ with tabs[1]:
                 st.dataframe(summary_df)
 
                 st.write(" Analysis was done")
-                fig= analyzer.plot()
+                # fig= analyzer.plot()
+                fig = analyzer.plot(signal_units=signal_units)
+                if fig and fig.data:
+                    st.plotly_chart(fig, use_container_width=True)
+                    st.success(" Signal quality analysis completed successfully.")
+                else:
+                    st.warning("No chart was generated. There may be no data to display.")
+
                 
-                if fig:
-                    st.plotly_chart(fig, use_container_width=True)
-                else:
-                    st.warning("There are no charts to display..")
+                # if fig:
+                    # st.plotly_chart(fig, use_container_width=True)
+                # else:
+                    # st.warning("There are no charts to display..")
 
 
-                if fig is None or not fig.data:
-                    st.warning(" No chart was generated. There may be no data to display..")
-                else:
-                    st.plotly_chart(fig, use_container_width=True)
-                    st.success(" Signal quality analysis completed successfully..")
+                # if fig is None or not fig.data:
+                    # st.warning(" No chart was generated. There may be no data to display..")
+                # else:
+                    # st.plotly_chart(fig, use_container_width=True)
+                    # st.success(" Signal quality analysis completed successfully..")
                     
                 st.write(" number trace in fig:", len(fig.data))
                 for i, trace in enumerate(fig.data):
