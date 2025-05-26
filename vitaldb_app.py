@@ -176,7 +176,7 @@ class SignalAnalyzer:
         for i, var in enumerate(self.variable_names):
             row = i + 1
             signal = df[var]
-            if signal.dropna().empty or signal.min() == signal.max():
+            if signal.dropna().empty:
                 continue  # The signal is completely blank or unchanged.
             time = df["time"]
             unit = signal_units.get(var, "") if signal_units else ""
