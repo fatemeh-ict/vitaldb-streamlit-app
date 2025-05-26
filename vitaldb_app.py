@@ -817,19 +817,35 @@ with tabs[1]:
 
                 fig = analyzer.plot(signal_units=signal_units)
                 if fig is None:
-                    st.error("❌ plot() returned None.")
-                elif not hasattr(fig, 'data') or len(fig.data) == 0:
-                    st.error("❌ plot() is empty — no data in fig.")
+                    st.error("❌ analyzer.plot() returned None.")
+                elif len(fig.data) == 0:
+                    st.warning("⚠️ Plot created but contains no traces.")
                 else:
                     st.success(f"✅ Plot created with {len(fig.data)} trace(s).")
-                    for i, trace in enumerate(fig.data):
-                        st.write(f"🔹 Trace {i}: name = {trace.name}, points = {len(trace.x)}")
-
-                if fig and fig.data:
                     st.plotly_chart(fig, use_container_width=True)
-                    st.success(" Signal quality analysis completed successfully.")
-                else:
-                    st.warning("No chart was generated. There may be no data to display.")
+                    for i, trace in enumerate(fig.data):
+                        st.write(f"📊 Trace {i}: {trace.name} — {len(trace.x)} points")
+
+                    st.write("✅ analyzer.plot() returned:", type(fig))
+                    st.write("📊 Number of traces in fig:", len(fig.data) if fig else "No figure")
+
+
+
+                
+                # if fig is None:
+                #     st.error("❌ plot() returned None.")
+                # elif not hasattr(fig, 'data') or len(fig.data) == 0:
+                #     st.error("❌ plot() is empty — no data in fig.")
+                # else:
+                #     st.success(f"✅ Plot created with {len(fig.data)} trace(s).")
+                #     for i, trace in enumerate(fig.data):
+                #         st.write(f"🔹 Trace {i}: name = {trace.name}, points = {len(trace.x)}")
+
+                # if fig and fig.data:
+                #     st.plotly_chart(fig, use_container_width=True)
+                #     st.success(" Signal quality analysis completed successfully.")
+                # else:
+                #     st.warning("No chart was generated. There may be no data to display.")
 
                 
                 # if fig:
@@ -844,13 +860,14 @@ with tabs[1]:
                     # st.plotly_chart(fig, use_container_width=True)
                     # st.success(" Signal quality analysis completed successfully..")
                     
-                st.write(" number trace in fig:", len(fig.data))
-                for i, trace in enumerate(fig.data):
-                    st.write(f" trace {i}: name={trace.name}, points={len(trace.x)}")
-                st.write(" Type of fig:", type(fig))
-                st.write(" number trace in fig:", len(fig.data))
-                for i, trace in enumerate(fig.data):
-                    st.write(f" trace {i}: name={trace.name}, points={len(trace.x)}")
+                # st.write(" number trace in fig:", len(fig.data))
+                # for i, trace in enumerate(fig.data):
+                #     st.write(f" trace {i}: name={trace.name}, points={len(trace.x)}")
+                # st.write(" Type of fig:", type(fig))
+                # st.write(" number trace in fig:", len(fig.data))
+                # for i, trace in enumerate(fig.data):
+                #     st.write(f" trace {i}: name={trace.name}, points={len(trace.x)}")
+                
                 # st.plotly_chart(fig, use_container_width=True)
                 # st.write(" The diagram was drawn")
                 
