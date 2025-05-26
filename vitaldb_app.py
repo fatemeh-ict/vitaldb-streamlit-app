@@ -176,7 +176,7 @@ class SignalAnalyzer:
         for i, var in enumerate(self.variable_names):
             row = i + 1
             signal = df[var]
-            if signal.dropna().empty:
+            if signal.isna().all() or signal.min() == signal.max():
                 continue  # The signal is completely blank or unchanged.
             time = df["time"]
             unit = signal_units.get(var, "") if signal_units else ""
@@ -758,7 +758,7 @@ with tabs[1]:
     else:
         selected_case = st.selectbox(" Select Case ID", st.session_state["valid_ids"])
 
-        if st.button(" تSignal analysis of this case"):
+        if st.button(" Signal analysis of this case"):
             st.write(" The analyze button was clicked")
 
             try:
