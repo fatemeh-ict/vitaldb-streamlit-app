@@ -808,6 +808,11 @@ with tabs[1]:
 
                 st.write(" Analysis was done")
                 # fig= analyzer.plot()
+                signal_units = {"BIS/BIS": " ", "Solar8000/NIBP_SBP": "mmHg", "Solar8000/NIBP_DBP": "mmHg",
+                       "Orchestra/PPF20_RATE": "bpm", "Orchestra/RFTN20_RATE": "bpm",
+                       "Orchestra/RFTN50_RATE": "bpm",
+                         }
+
                 fig = analyzer.plot(signal_units=signal_units)
                 if fig and fig.data:
                     st.plotly_chart(fig, use_container_width=True)
