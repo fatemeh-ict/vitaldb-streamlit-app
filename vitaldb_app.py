@@ -8,6 +8,7 @@ from scipy.interpolate import interp1d
 import vitaldb
 import matplotlib.pyplot as plt
 import seaborn as sns
+import random
 
 # ==========================
 # Class: CaseSelector
@@ -724,7 +725,8 @@ with tabs[0]:
 
 
         # Calculating the global mean and MAD on the first 10 cases
-        sample_ids = st.session_state["valid_ids"][:10]
+
+        sample_ids = random.sample(st.session_state["valid_ids"], min(300, len(st.session_state["valid_ids"])))
         global_medians, global_mads = get_global_stats_cached(sample_ids, variables)
         st.session_state["global_medians"] = global_medians
         st.session_state["global_mads"] = global_mads
