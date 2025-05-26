@@ -56,6 +56,25 @@ class SignalAnalyzer:
         }
         self.warnings = []
 
+    def get_summary_table(self):
+      rows = []
+      for var in self.variable_names:
+        n_nans = len(self.issues[var]['nan'])
+        n_gaps = len(self.issues[var]['gap'])
+        n_outliers = len(self.issues[var]['outlier'])
+        n_jumps = len(self.issues[var]['jump'])
+        gap_long_count = sum(1 for g in self.issues[var]['classified_gaps'] if g['type'] == 'long')
+        gap_long_pct = (gap_long_count / n_gaps) * 100 if n_gaps else 0
+        rows.append({
+            "Signal": var,
+            "NaNs": n_nans,
+            "Gaps": f"{n_gaps} ({gap_long_pct:.1f}% long)",
+            "Outliers": n_outliers,
+            "Jumps": n_jumps
+        })
+      return pd.DataFrame(rows)
+
+
     def analyze(self):
         #for i, var in enumerate (self.variable_names):  # Clean invalid BIS = 0 → NaN
          # if "BIS" in var:
@@ -158,7 +177,7 @@ class SignalAnalyzer:
             row = i + 1
             signal = df[var]
             if signal.dropna().empty or signal.min() == signal.max():
-                continue  # سیگنال کاملاً خالی یا بدون تغییر است
+                continue  # The signal is completely blank or unchanged.
             time = df["time"]
             unit = signal_units.get(var, "") if signal_units else ""
 
@@ -385,7 +404,7 @@ class StatisticsPlotter:
     # Plot mean, median, std before and after interpolation for each case
     def plot_case_summary(self, df_stats, max_cases=None,rel_change_threshold=0.2):
        if 'caseid' not in df_stats.columns:
-           print("⚠️ Warning: 'caseid' column not found in df_stats. Skipping plot_case_summary.")
+           print("Warning: 'caseid' column not found in df_stats. Skipping plot_case_summary.")
            return
        caseids = df_stats['caseid'].unique()
        if max_cases:
@@ -638,7 +657,7 @@ def get_global_stats_cached(case_ids, variables):
 
 # Rewriting Tab 1 with signal group selection, anesthesia type, and bolus exclusions + download buttons
 
-tabs = st.tabs(["1️⃣ Select Cases", "2️⃣ Signal Quality", "3️⃣ Interpolation", "4️⃣ Evaluation", "5️⃣ Export","6 analysis"])
+tabs = st.tabs([" Select Cases", " Signal Quality", " Interpolation", " Evaluation", " Export"," analysis"])
 
 with tabs[0]:
     st.header("Step 1: Select Valid Cases")
@@ -661,7 +680,7 @@ with tabs[0]:
         "Orchestra/PPF20_CE", "Orchestra/RFTN50_CE"
     ]
 
-    if st.button("📥 Load and Filter Cases"):
+    if st.button(" Load and Filter Cases"):
         df_cases = pd.read_csv("https://api.vitaldb.net/cases")
         df_trks = pd.read_csv("https://api.vitaldb.net/trks")
         df_labs = pd.read_csv("https://api.vitaldb.net/labs")
@@ -704,7 +723,7 @@ with tabs[0]:
         
 
 
-        # محاسبه میانگین و MAD گلوبال روی 50 کیس اول
+        # Calculating the global mean and MAD on the first 10 cases
         sample_ids = st.session_state["valid_ids"][:10]
         global_medians, global_mads = get_global_stats_cached(sample_ids, variables)
         st.session_state["global_medians"] = global_medians
@@ -714,15 +733,15 @@ with tabs[0]:
         st.success(f"{len(valid_ids)} valid case(s) found.")
         st.dataframe(df_cases_filtered.head(10))
 
-        st.download_button("⬇️ Download Filtered Cases",
+        st.download_button(" Download Filtered Cases",
                            df_cases_filtered.to_csv(index=False),
                            file_name="filtered_cases.csv")
 
-        st.download_button("⬇️ Download Filtered Tracks",
+        st.download_button(" Download Filtered Tracks",
                            df_trks_filtered.to_csv(index=False),
                            file_name="filtered_trks.csv")
 
-        st.download_button("⬇️ Download Filtered Labs",
+        st.download_button(" Download Filtered Labs",
                            df_labs_filtered.to_csv(index=False),
                            file_name="filtered_labs.csv")        
         
@@ -731,30 +750,30 @@ with tabs[0]:
 #---------------------------------------
 with tabs[1]:
     st.header("Step 2: Signal Quality Analysis")
-    st.write("📌 تب دوم در حال اجرا است")
+    st.write(" The second tab is running.")
 
 
     if "valid_ids" not in st.session_state or "variables" not in st.session_state:
-        st.warning("لطفاً ابتدا در مرحله 1 کیس‌ها را انتخاب کنید.")
+        st.warning(" Please select the cases first in step 1.")
     else:
-        selected_case = st.selectbox("✅ انتخاب Case ID", st.session_state["valid_ids"])
+        selected_case = st.selectbox(" Select Case ID", st.session_state["valid_ids"])
 
-        if st.button("🔍 تحلیل سیگنال‌های این کیس"):
-            st.write("✅ دکمه تحلیل کلیک شد")
+        if st.button(" تSignal analysis of this case"):
+            st.write(" The analyze button was clicked")
 
             try:
                 data = vitaldb.load_case(selected_case, st.session_state["variables"], interval=1)
-                st.write("📊 نمونه‌ای از داده:")
+                st.write(" Sample data:")
                 st.dataframe(pd.DataFrame(data, columns=st.session_state["variables"]).head())
                 df = pd.DataFrame(data, columns=st.session_state["variables"])
-                # چک کردن درصد NaN در هر ستون
-                st.write("📉 درصد داده‌های NaN در هر ستون:")
+                # Checking the percentage of NaN
+                st.write(" Percentage of NaN data in each column:")
                 st.write(df.isna().mean())
-                # بررسی اینکه همه ستون‌ها خالی نباشند
+                # Check that all columns are not empty
                 if df.dropna(how='all').empty:
-                    st.warning("📛 همه ستون‌ها فقط مقادیر NaN دارند. لطفاً یک Case دیگر انتخاب کنید.")
+                    st.warning(" All columns have only NaN values. Please choose another Case.")
                     st.stop()
-                st.write("📥 داده لود شد:", data.shape if hasattr(data, 'shape') else "بدون shape")
+                st.write(" Data loaded:", data.shape if hasattr(data, 'shape') else "without shape")
 
 
                 runner = PipelineRunner(
@@ -764,7 +783,7 @@ with tabs[1]:
                     df_cases_filtered=st.session_state["df_cases_filtered"]
                 )
 
-                # محاسبه میانگین و MAD جهانی فقط برای این کیس
+                # Calculate the global mean and MAD for this case only.
                 # global_medians, global_mads = get_global_stats_cached([selected_case_interp], st.session_state["variables"])
 
                 global_medians = st.session_state["global_medians"]
@@ -780,56 +799,66 @@ with tabs[1]:
                     global_mads=global_mads,
                     plot=True
                 )
-                st.write("🔬 Analyzer ساخته شد")
+                st.write(" Analyzer was created")
 
                 analyzer.analyze()
-                st.write("✅ تحلیل انجام شد")
+                summary_df = analyzer.get_summary_table()
+                st.subheader(" Signals statistics table ")
+                st.dataframe(summary_df)
+
+                st.write(" Analysis was done")
                 fig= analyzer.plot()
+                
+                if fig:
+                    st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("There are no charts to display..")
+
 
                 if fig is None or not fig.data:
-                    st.warning("📛 نموداری تولید نشد. احتمالاً داده‌ای برای نمایش وجود ندارد.")
+                    st.warning(" No chart was generated. There may be no data to display..")
                 else:
                     st.plotly_chart(fig, use_container_width=True)
-                    st.success("✅ تحلیل کیفیت سیگنال با موفقیت انجام شد.")
+                    st.success(" Signal quality analysis completed successfully..")
                     
-                st.write("📉 تعداد trace در fig:", len(fig.data))
+                st.write(" number trace in fig:", len(fig.data))
                 for i, trace in enumerate(fig.data):
-                    st.write(f"📌 trace {i}: name={trace.name}, points={len(trace.x)}")
-                st.write("📊 Type of fig:", type(fig))
-                st.write("📉 تعداد trace در fig:", len(fig.data))
+                    st.write(f" trace {i}: name={trace.name}, points={len(trace.x)}")
+                st.write(" Type of fig:", type(fig))
+                st.write(" number trace in fig:", len(fig.data))
                 for i, trace in enumerate(fig.data):
-                    st.write(f"📌 trace {i}: name={trace.name}, points={len(trace.x)}")
+                    st.write(f" trace {i}: name={trace.name}, points={len(trace.x)}")
                 # st.plotly_chart(fig, use_container_width=True)
-                # st.write("✅ نمودار رسم شد")
+                # st.write(" The diagram was drawn")
                 
 
 
-                st.success("✅ تحلیل کیفیت سیگنال با موفقیت انجام شد.")
+                st.success(" Signal quality analysis completed successfully..")
 
             except Exception as e:
-                st.error(f"❌ خطا در بارگذاری یا تحلیل کیس {selected_case}: {e}")
+                st.error(f" Error loading or analyzing case {selected_case}: {e}")
 #-------------------------------------
 with tabs[2]:
     st.header("Step 3: Signal Interpolation & Alignment")
 
     if "valid_ids" not in st.session_state or "variables" not in st.session_state:
-        st.warning("لطفاً ابتدا مراحل 1 و 2 را تکمیل کنید.")
+        st.warning("Please complete steps 1 and 2 first..")
     else:
-        selected_case_interp = st.selectbox("🔁 انتخاب Case برای درون‌یابی", st.session_state["valid_ids"], key="interp_case")
+        selected_case_interp = st.selectbox(" Selecting a Case for Interpolation", st.session_state["valid_ids"], key="interp_case")
         interp_method_option = st.selectbox(
-        "🔧 روش درون‌یابی سیگنال را انتخاب کنید:",
+        " Select the signal interpolation method.:",
         options=["auto", "linear", "cubic", "slinear"],
-        index=0,  # پیش‌فرض: auto
-        help="در حالت 'auto' روش مناسب برای هر متغیر به‌صورت خودکار انتخاب می‌شود."
+        index=0,  # default: auto
+        help="In 'auto' mode, the appropriate method is automatically selected for each variable.."
         )
 
 
-        if st.button("⚙️ انجام درون‌یابی و هم‌ترازی سیگنال"):
+        if st.button(" Perform signal interpolation and alignment"):
             try:
-                # بارگذاری داده خام
+                # Upload raw data
                 raw_data = vitaldb.load_case(selected_case_interp, st.session_state["variables"], interval=1)
 
-                # اجرای تحلیل مجدد برای استفاده از global MAD/median
+                # Re-run analysis to use global MAD/median
                 runner = PipelineRunner(
                     case_ids=[selected_case_interp],
                     variables=st.session_state["variables"],
@@ -865,24 +894,24 @@ with tabs[2]:
                 )
                 imputed_data = processor.process()
 
-                # ذخیره برای مرحله بعدی
+                # Save for next step
                 st.session_state["imputed_data"] = imputed_data
                 st.session_state["raw_data"] = raw_data
                 st.session_state["selected_case_interp"] = selected_case_interp
 
-                st.success("✅ سیگنال با موفقیت درون‌یابی و هم‌تراز شد.")
+                st.success(" The signal was successfully interpolated and aligned.")
 
-                st.write("📊 نمونه‌ای از داده‌های خام و پس از درون‌یابی:")
+                st.write(" An example of raw data and post-interpolation:")
                 st.dataframe(pd.DataFrame(imputed_data, columns=st.session_state["variables"]).head())
 
             except Exception as e:
-                st.error(f"❌ خطا در درون‌یابی: {e}")
+                st.error(f" Error in interpolation: {e}")
 #-------------------------------------------------
 with tabs[3]:
     st.header("Step 4: Evaluation of Imputed Signals")
 
     if "raw_data" not in st.session_state or "imputed_data" not in st.session_state:
-        st.warning("⚠️ ابتدا مرحله درون‌یابی را انجام دهید.")
+        st.warning(" First, perform the interpolation step..")
     else:
         try:
             evaluator = Evaluator(
@@ -897,24 +926,24 @@ with tabs[3]:
             stats_df["caseid"] = st.session_state["selected_case_interp"]
 
 
-            st.subheader("📈 آماره‌های قبل و بعد از درون‌یابی")
+            st.subheader("Statistics before and after interpolation")
             st.dataframe(stats_df)
 
-            st.subheader("📏 اطلاعات طول سیگنال")
+            st.subheader(" Signal length information")
             st.table(length_df)
 
-            st.subheader("📉 نمودار مقایسه‌ای سیگنال‌ها")
+            st.subheader("Signals comparison chart")
             fig = evaluator.plot_comparison(max_points=1000)
             st.pyplot(fig)
 
-            # ذخیره برای خروجی نهایی
+            # Save for final output
             st.session_state["eval_stats"] = stats_df
 
         except Exception as e:
-            st.error(f"❌ خطا در تحلیل مقایسه‌ای: {e}")
+            st.error(f" Error in comparative analysis: {e}")
             
         st.session_state["eval_stats"] = stats_df
-        st.session_state["raw_data"] = st.session_state["raw_data"]  # اختیاری چون قبلاً هست ولی واضح‌تر می‌شود
+        st.session_state["raw_data"] = st.session_state["raw_data"]  # Optional because it already exists but becomes clearer.
         st.session_state["imputed_data"] = st.session_state["imputed_data"]
 
 
@@ -923,34 +952,34 @@ with tabs[4]:
     st.header("Step 5: Export Final Results")
 
     if "eval_stats" not in st.session_state or "imputed_data" not in st.session_state:
-        st.warning("⚠️ ابتدا مراحل قبلی را تکمیل کنید.")
+        st.warning(" Complete the previous steps first..")
     else:
-        # نمایش اطلاعات آماری
-        st.subheader("📊 Final Evaluation Statistics")
+        # Display statistical information
+        st.subheader(" Final Evaluation Statistics")
         st.dataframe(st.session_state["eval_stats"])
 
-        # ایجاد دیتافریم از داده درون‌یابی‌شده
+        #Creating a DataFrame from Interpolated Data
         df_imputed = pd.DataFrame(st.session_state["imputed_data"], columns=st.session_state["variables"])
         df_imputed["time"] = np.arange(len(df_imputed))
-        st.subheader("📄 Interpolated Signal Data")
+        st.subheader(" Interpolated Signal Data")
         st.dataframe(df_imputed.head(10))
 
-        # دانلود فایل‌ها
+        # Download files
         st.subheader("⬇️ Download Files")
 
         st.download_button(
-            "📥 Download Imputed Signal Data (CSV)",
+            " Download Imputed Signal Data (CSV)",
             df_imputed.to_csv(index=False),
             file_name="imputed_signals.csv"
         )
 
         st.download_button(
-            "📥 Download Evaluation Statistics (CSV)",
+            " Download Evaluation Statistics (CSV)",
             st.session_state["eval_stats"].to_csv(index=False),
             file_name="evaluation_statistics.csv"
         )
 
-        st.success("✅ فایل‌های خروجی آماده دانلود هستند.")
+        st.success(" Output files are ready for download.")
 
 #=====================
 
@@ -958,38 +987,38 @@ with tabs[4]:
 with tabs[5]:
     st.header("Step 6: Analysis")
 
-    # چک اینکه دیتاها وجود داشته باشند
+    # Check that the data exists.
     if "eval_stats" not in st.session_state:
-        st.warning("⚠️ ابتدا مرحله ارزیابی (تب ۴) را کامل کنید.")
+        st.warning(" First complete the assessment step (tab 4).")
         st.stop()
 
     if "df_cases" not in st.session_state or "df_cases_filtered" not in st.session_state:
-        st.warning("⚠️ اطلاعات فیلترشده وجود ندارد. لطفاً تب اول را اجرا کنید.")
+        st.warning(" There is no filtered information. Please run the first tab.")
         st.stop()
 
-    # بارگذاری دیتاها
+    #Loading dataا
     df_stats = st.session_state["eval_stats"]
     df_all = st.session_state["df_cases"]
     df_filtered = st.session_state["df_cases_filtered"]
 
-    # ایجاد پلاتر
+    # create plotterر
     plotter = StatisticsPlotter()
 
-    # بخش اول: نمودار آماری مقایسه‌ای برای میانگین، میانه، انحراف معیار
-    st.subheader("📊 تغییرات آماری سیگنال‌ها قبل و بعد از درون‌یابی")
+    # Part One: Comparative statistical chart for mean, median, standard deviation
+    st.subheader(" Statistical changes of signals before and after interpolation.")
     plotter.plot_case_summary(df_stats, max_cases=10, rel_change_threshold=0.0)
 
-    # بخش دوم: مقایسه ویژگی‌های عددی
-    st.subheader("📈 مقایسه ویژگی‌های عددی بیماران")
-    numeric_cols = st.multiselect("انتخاب ستون‌های عددی برای مقایسه:", 
+    # Part Two: Comparison of Numerical Features
+    st.subheader(" Comparison of numerical characteristics of patients")
+    numeric_cols = st.multiselect("Selecting numeric columns for comparison:", 
                                   df_all.select_dtypes(include=np.number).columns.tolist(),
                                   default=['age', 'bmi', 'weight', 'height'])
     if numeric_cols:
         plotter.compare_numerical(df_all, df_filtered, numeric_cols)
 
-    # بخش سوم: مقایسه ویژگی‌های دسته‌ای
-    st.subheader("🧩 مقایسه ویژگی‌های دسته‌ای بیماران")
-    categorical_cols = st.multiselect("انتخاب ستون‌های دسته‌ای برای مقایسه:",
+    # Part Three: Comparing Batch Features
+    st.subheader(" Comparing patient group characteristics")
+    categorical_cols = st.multiselect("Selecting categorical columns for comparison:",
                                       df_all.select_dtypes(include='object').columns.tolist(),
                                       default=['sex', 'ane_type', 'optype', 'department', 'position'])
     if categorical_cols:
