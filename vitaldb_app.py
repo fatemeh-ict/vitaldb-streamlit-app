@@ -817,6 +817,9 @@ with tabs[1]:
                          }
 
                 fig = analyzer.plot(signal_units=signal_units)
+                st.session_state["signal_summary_df"] = summary_df
+                st.session_state["signal_plot"] = fig
+
                 if fig is None:
                     st.error("❌ analyzer.plot() returned None.")
                 elif len(fig.data) == 0:
