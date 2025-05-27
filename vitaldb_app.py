@@ -538,10 +538,10 @@ class PipelineRunner:
         self.df_cases_filtered = df_cases_filtered
         self.results = []
 
-   def compute_global_stats(self, case_ids_for_stats, variables, n_samples=100):
-    all_samples = {var: [] for var in variables}
+    def compute_global_stats(self, case_ids_for_stats, variables, n_samples=100):
+     all_samples = {var: [] for var in variables}
 
-    for cid in case_ids_for_stats:
+     for cid in case_ids_for_stats:
         try:
             data = vitaldb.load_case(cid, variables, interval=1)
             n_rows = data.shape[0]
