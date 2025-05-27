@@ -538,36 +538,34 @@ class PipelineRunner:
         self.df_cases_filtered = df_cases_filtered
         self.results = []
 
-    def compute_global_stats(self, case_ids_for_stats, variables):
-      all_data_list = []
-      for cid in case_ids_for_stats:
+   def compute_global_stats(self, case_ids_for_stats, variables, n_samples=100):
+    all_samples = {var: [] for var in variables}
+
+    for cid in case_ids_for_stats:
         try:
             data = vitaldb.load_case(cid, variables, interval=1)
-            all_data_list.append(data)
-        except:
+            n_rows = data.shape[0]
+            if n_rows < n_samples:
+                continue
+            idx = np.sort(np.random.choice(n_rows, size=n_samples, replace=False))
+            for i, var in enumerate(variables):
+                sampled = data[idx, i]
+                sampled = sampled[~np.isnan(sampled)]
+                all_samples[var].extend(sampled.tolist())
+        except Exception as e:
+            print(f"Skipping case {cid} due to error: {e}")
             continue
 
-      if not all_data_list:
-        raise ValueError("No valid data found for computing global stats.")
+    self.global_medians = {}
+    self.global_mads = {}
+    for var in variables:
+        vec = np.array(all_samples[var])
+        vec = vec[~np.isnan(vec)]
+        self.global_medians[var] = np.median(vec)
+        self.global_mads[var] = np.median(np.abs(vec - self.global_medians[var])) or 1e-6
 
-      min_len = min(d.shape[0] for d in all_data_list)
-      trimmed_data = np.concatenate([d[:min_len, :] for d in all_data_list], axis=0)
+    print("Global medians and MADs computed using random sampling.")
 
-      self.global_medians = {}
-      self.global_mads = {}
-      for i, var in enumerate(variables):
-        sig = trimmed_data[:, i]
-        sig = sig[~np.isnan(sig)]
-        self.global_medians[var] = np.median(sig)
-        self.global_mads[var] = np.median(np.abs(sig - self.global_medians[var])) or 1e-6
-
-      print("Global medians and MADs computed.\n")
-      print("trimmed_data shape:", trimmed_data.shape)
-      print("Number of samples (rows):", trimmed_data.shape[0])
-      print("Number of variables (columns):", trimmed_data.shape[1])
-      print("Variables:", self.variables)
-      print("Total number of cases used for global stats:", len(all_data_list))
-      print(" Global median for BIS/BIS:",self.global_medians.get("BIS/BIS", "Not Found"))
 
 
     def run(self):
@@ -650,9 +648,11 @@ class PipelineRunner:
 
 #------------------------------------------------------------------
 @st.cache_data
-def get_global_stats_cached(case_ids, variables):
+# def get_global_stats_cached(case_ids, variables):
+def get_global_stats_cached(case_ids, variables, n_samples=100):
     runner = PipelineRunner(case_ids, variables)
-    runner.compute_global_stats(case_ids, variables)
+    runner.compute_global_stats(case_ids, variables, n_samples=100)
+    # runner.compute_global_stats(case_ids, variables)
     return runner.global_medians, runner.global_mads
 
 
@@ -727,7 +727,7 @@ with tabs[0]:
         # Calculating the global mean and MAD on the first 10 cases
 
         sample_ids = random.sample(st.session_state["valid_ids"], min(300, len(st.session_state["valid_ids"])))
-        global_medians, global_mads = get_global_stats_cached(sample_ids, variables)
+        global_medians, global_mads = get_global_stats_cached(sample_ids, variables, n_samples=100)
         st.session_state["global_medians"] = global_medians
         st.session_state["global_mads"] = global_mads
 
