@@ -538,33 +538,34 @@ class PipelineRunner:
         self.df_cases_filtered = df_cases_filtered
         self.results = []
 
+
     def compute_global_stats(self, case_ids_for_stats, variables, n_samples=100):
-     all_samples = {var: [] for var in variables}
+        all_samples = {var: [] for var in variables}
 
-     for cid in case_ids_for_stats:
-        try:
-            data = vitaldb.load_case(cid, variables, interval=1)
-            n_rows = data.shape[0]
-            if n_rows < n_samples:
+        for cid in case_ids_for_stats:
+            try:
+                data = vitaldb.load_case(cid, variables, interval=1)
+                n_rows = data.shape[0]
+                if n_rows < n_samples:
+                    continue
+                idx = np.sort(np.random.choice(n_rows, size=n_samples, replace=False))
+                for i, var in enumerate(variables):
+                    sampled = data[idx, i]
+                    sampled = sampled[~np.isnan(sampled)]
+                    all_samples[var].extend(sampled.tolist())
+            except Exception as e:
+                print(f"Skipping case {cid} due to error: {e}")
                 continue
-            idx = np.sort(np.random.choice(n_rows, size=n_samples, replace=False))
-            for i, var in enumerate(variables):
-                sampled = data[idx, i]
-                sampled = sampled[~np.isnan(sampled)]
-                all_samples[var].extend(sampled.tolist())
-        except Exception as e:
-            print(f"Skipping case {cid} due to error: {e}")
-            continue
 
-     self.global_medians = {}
-     self.global_mads = {}
-     for var in variables:
-        vec = np.array(all_samples[var])
-        vec = vec[~np.isnan(vec)]
-        self.global_medians[var] = np.median(vec)
-        self.global_mads[var] = np.median(np.abs(vec - self.global_medians[var])) or 1e-6
+        self.global_medians = {}
+        self.global_mads = {}
+        for var in variables:
+            vec = np.array(all_samples[var])
+            vec = vec[~np.isnan(vec)]
+            self.global_medians[var] = np.median(vec)
+            self.global_mads[var] = np.median(np.abs(vec - self.global_medians[var])) or 1e-6
 
-     print("Global medians and MADs computed using random sampling.")
+        print("Global medians and MADs computed using random sampling.")
 
 
 
