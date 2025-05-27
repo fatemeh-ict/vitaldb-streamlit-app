@@ -556,15 +556,15 @@ class PipelineRunner:
             print(f"Skipping case {cid} due to error: {e}")
             continue
 
-    self.global_medians = {}
-    self.global_mads = {}
-    for var in variables:
+     self.global_medians = {}
+     self.global_mads = {}
+     for var in variables:
         vec = np.array(all_samples[var])
         vec = vec[~np.isnan(vec)]
         self.global_medians[var] = np.median(vec)
         self.global_mads[var] = np.median(np.abs(vec - self.global_medians[var])) or 1e-6
 
-    print("Global medians and MADs computed using random sampling.")
+     print("Global medians and MADs computed using random sampling.")
 
 
 
