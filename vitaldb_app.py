@@ -821,29 +821,29 @@ with tabs[1]:
                 st.session_state["signal_plot"] = fig
 
                 if fig is None:
-                    st.error("❌ analyzer.plot() returned None.")
+                    st.error(" analyzer.plot() returned None.")
                 elif len(fig.data) == 0:
-                    st.warning("⚠️ Plot created but contains no traces.")
+                    st.warning(" Plot created but contains no traces.")
                 else:
-                    st.success(f"✅ Plot created with {len(fig.data)} trace(s).")
+                    st.success(f"Plot created with {len(fig.data)} trace(s).")
                     st.plotly_chart(fig, use_container_width=True)
                     for i, trace in enumerate(fig.data):
-                        st.write(f"📊 Trace {i}: {trace.name} — {len(trace.x)} points")
+                        st.write(f" Trace {i}: {trace.name} — {len(trace.x)} points")
 
-                    st.write("✅ analyzer.plot() returned:", type(fig))
-                    st.write("📊 Number of traces in fig:", len(fig.data) if fig else "No figure")
+                    st.write(" analyzer.plot() returned:", type(fig))
+                    st.write("Number of traces in fig:", len(fig.data) if fig else "No figure")
 
 
 
                 
                 # if fig is None:
-                #     st.error("❌ plot() returned None.")
+                #     st.error("plot() returned None.")
                 # elif not hasattr(fig, 'data') or len(fig.data) == 0:
-                #     st.error("❌ plot() is empty — no data in fig.")
+                #     st.error(" plot() is empty — no data in fig.")
                 # else:
-                #     st.success(f"✅ Plot created with {len(fig.data)} trace(s).")
+                #     st.success(f" Plot created with {len(fig.data)} trace(s).")
                 #     for i, trace in enumerate(fig.data):
-                #         st.write(f"🔹 Trace {i}: name = {trace.name}, points = {len(trace.x)}")
+                #         st.write(f" Trace {i}: name = {trace.name}, points = {len(trace.x)}")
 
                 # if fig and fig.data:
                 #     st.plotly_chart(fig, use_container_width=True)
@@ -1009,7 +1009,7 @@ with tabs[4]:
         st.dataframe(df_imputed.head(10))
 
         # Download files
-        st.subheader("⬇️ Download Files")
+        st.subheader(" Download Files")
 
         st.download_button(
             " Download Imputed Signal Data (CSV)",
