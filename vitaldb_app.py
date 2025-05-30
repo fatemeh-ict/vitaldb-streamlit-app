@@ -287,7 +287,15 @@ class SignalProcessor:
             signal = self.data[:, i]
             # Convert BIS == 0 to NaN only for interpolation
             if "BIS" in var:
+              original_nan_count = np.isnan(signal).sum()
               signal[signal == 0] = np.nan
+              nan_after_zero_replace = np.isnan(signal).sum()
+              n_added_from_zero = nan_after_zero_replace - original_nan_count
+              self.issues[var]["nan_before"] = original_nan_count
+              self.issues[var]["zero_to_nan"] = n_added_from_zero
+
+            # if "BIS" in var:
+              # signal[signal == 0] = np.nan
 
             gaps = self.issues[var].get('classified_gaps', [])
             x = np.arange(len(signal))
@@ -1248,6 +1256,13 @@ with tabs[3]:
         st.session_state["eval_stats"] = stats_df
         st.session_state["raw_data"] = st.session_state["raw_data"]  # Optional because it already exists but becomes clearer.
         st.session_state["imputed_data"] = st.session_state["imputed_data"]
+        if "BIS/BIS" in analyzer.issues:
+          info = analyzer.issues["BIS/BIS"]
+          st.markdown("### 🧠 NaN Analysis for BIS/BIS")
+          st.write(f"🔹 NaN قبل از تبدیل صفرها: **{info.get('nan_before', 'N/A')}**")
+          st.write(f"🔸 NaN اضافه‌شده از صفرها: **{info.get('zero_to_nan', 'N/A')}**")
+          st.write(f"🔻 NaN باقی‌مانده بعد از درون‌یابی: **{info.get('nan_after_interp', 'N/A')}**")
+
 
 
 #----------------------------------------------
