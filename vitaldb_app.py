@@ -9,6 +9,8 @@ import vitaldb
 import matplotlib.pyplot as plt
 import seaborn as sns
 import random
+from scipy.stats import pearsonr
+from scipy.signal import correlate
 
 # ==========================
 # Class: CaseSelector
@@ -647,6 +649,261 @@ class PipelineRunner:
 
         return pd.concat(self.results, ignore_index=True)
 
+#=================
+#Sorrelation
+#===========================
+
+
+
+class StatisticalTester:
+    def __init__(self, raw_signals, imputed_signals, variable_names):
+        self.raw_signals = raw_signals
+        self.imputed_signals = imputed_signals
+        self.variables = variable_names
+        self.results = []
+        self.df_tests = None
+
+    def run_tests(self):
+        from scipy.stats import pearsonr, ttest_rel
+        results = []
+
+        for var in self.variables:
+            corrs, pvals, tstats, tpvals = [], [], [], []
+
+            for cid in self.raw_signals:
+                raw = self.raw_signals[cid][:, self.variables.index(var)]
+                imp = self.imputed_signals[cid][:, self.variables.index(var)]
+
+                # ✳️ Make sure raw and imp have the same length
+                min_len = min(len(raw), len(imp))
+                raw = raw[:min_len]
+                imp = imp[:min_len]
+
+                mask = ~np.isnan(raw) & ~np.isnan(imp)
+                if mask.sum() < 10:
+                    continue
+
+                raw_valid, imp_valid = raw[mask], imp[mask]
+
+                corr, pval = pearsonr(raw_valid, imp_valid)
+                tstat, tpval = ttest_rel(raw_valid, imp_valid)
+
+                corrs.append(corr)
+                pvals.append(pval)
+                tstats.append(tstat)
+                tpvals.append(tpval)
+
+            results.append({
+                "variable": var,
+                "avg_corr": np.mean(corrs),
+                "avg_corr_pval": np.mean(pvals),
+                "avg_tstat": np.mean(tstats),
+                "avg_ttest_pval": np.mean(tpvals),
+                "n_cases": len(corrs),
+                "corr_list": corrs,
+                "pval_list": pvals
+            })
+
+        self.df_tests = pd.DataFrame(results)
+        return self.df_tests
+
+    def plot_boxplots(self, output_folder="plots_statistics"):
+        import matplotlib.pyplot as plt
+        import seaborn as sns
+        import os
+
+        os.makedirs(output_folder, exist_ok=True)
+
+        corr_data = [r["corr_list"] for r in self.df_tests.to_dict("records")]
+        pval_data = [r["pval_list"] for r in self.df_tests.to_dict("records")]
+
+        # Boxplot correlations
+        plt.figure(figsize=(10, 5))
+        sns.boxplot(data=corr_data)
+        plt.xticks(ticks=range(len(self.variables)), labels=self.variables, rotation=45)
+        plt.ylabel("Correlation (Raw vs Imputed)")
+        plt.title("Boxplot of Correlations")
+        plt.tight_layout()
+        plt.savefig(f"{output_folder}/boxplot_correlation.png")
+        plt.close()
+
+        # Boxplot p-values
+        plt.figure(figsize=(10, 5))
+        sns.boxplot(data=pval_data)
+        plt.xticks(ticks=range(len(self.variables)), labels=self.variables, rotation=45)
+        plt.ylabel("P-Value")
+        plt.title("Boxplot of P-values")
+        plt.tight_layout()
+        plt.savefig(f"{output_folder}/boxplot_pvalues.png")
+        plt.close()
+        print(" Saved boxplots.")
+
+    def plot_heatmap(self, output_folder="plots_statistics"):
+        import seaborn as sns
+        import matplotlib.pyplot as plt
+        import numpy as np
+        os.makedirs(output_folder, exist_ok=True)
+
+        n = len(self.variables)
+        mean_corr_matrix = np.zeros((n, n))
+        count_matrix = np.zeros((n, n))
+
+        for cid in self.imputed_signals:
+            df = pd.DataFrame(self.imputed_signals[cid], columns=self.variables)
+            corr = df.corr(method='pearson', min_periods=10)
+            mask = ~corr.isna()
+            mean_corr_matrix += corr.fillna(0).values
+            count_matrix += mask.values.astype(int)
+
+        mean_corr_matrix /= np.maximum(count_matrix, 1)
+        df_corr = pd.DataFrame(mean_corr_matrix, index=self.variables, columns=self.variables)
+
+        plt.figure(figsize=(10, 8))
+        sns.heatmap(df_corr, annot=True, fmt=".2f", cmap="coolwarm", square=True, linewidths=0.5)
+        plt.title("Heatmap of Signal Correlations (Imputed Data)")
+        plt.tight_layout()
+        plt.savefig(f"{output_folder}/heatmap_correlations.png")
+        plt.close()
+        print(" Saved heatmap.")
+
+
+    def compute_lagged_correlation(self, x, y, max_lag=60):
+      correlations = []
+      lags = np.arange(0, max_lag + 1)
+      for lag in lags:
+          if lag == 0:
+              x_lag = x
+              y_lag = y
+          else:
+              x_lag = x[:-lag]
+              y_lag = y[lag:]
+          mask = ~np.isnan(x_lag) & ~np.isnan(y_lag)
+          if mask.sum() > 10:
+             corr, _ = pearsonr(x_lag[mask], y_lag[mask])
+          else:
+              corr = np.nan
+          correlations.append(corr)
+      best_lag = lags[np.nanargmax(correlations)]
+      best_corr = np.nanmax(correlations)
+      return best_lag, best_corr, correlations
+
+    def run_lagged_tests(self, signal_x="Orchestra/PPF20_RATE", signal_y="BIS/BIS", max_lag=60):
+      lag_list, corr_list = [], []
+
+      for cid in self.imputed_signals:
+        x = self.imputed_signals[cid][:, self.variables.index(signal_x)]
+        y = self.imputed_signals[cid][:, self.variables.index(signal_y)]
+
+        min_len = min(len(x), len(y))
+        x = x[:min_len]
+        y = y[:min_len]
+
+        best_lag, best_corr, _ = self.compute_lagged_correlation(x, y, max_lag=max_lag)
+        lag_list.append(best_lag)
+        corr_list.append(best_corr)
+
+      df_lag = pd.DataFrame({
+        "caseid": list(self.imputed_signals.keys()),
+        "best_lag": lag_list,
+        "max_corr": corr_list
+           })
+
+      print(df_lag.describe())
+      return df_lag
+
+    def plot_lagged_summary(self,df_lag):
+
+      plt.figure(figsize=(14, 6))
+
+      plt.subplot(1, 2, 1)
+      sns.boxplot(y=df_lag["best_lag"])
+      plt.title("Boxplot of Best Lags")
+      plt.ylabel("Lag (samples)")
+
+      plt.subplot(1, 2, 2)
+      sns.histplot(df_lag["max_corr"], bins=10, kde=True, color="skyblue")
+      plt.title("Distribution of Maximum Lagged Correlations")
+      plt.xlabel("Max Correlation")
+      plt.ylabel("Frequency")
+
+      plt.tight_layout()
+      plt.show()
+
+
+    def compute_cross_correlation(self, x, y, max_lag=60):
+      min_len = min(len(x), len(y))
+      x = x[:min_len]
+      y = y[:min_len]
+
+      mask = ~np.isnan(x) & ~np.isnan(y)
+      x = x[mask]
+      y = y[mask]
+
+      if len(x) < 10:
+          return None, None, None
+
+      # محاسبه full cross-correlation
+      corr = correlate(y - np.mean(y), x - np.mean(x), mode='full')
+      corr /= (np.std(x) * np.std(y) * len(x))  # نرمال‌سازی
+
+      lags = np.arange(-len(x) + 1, len(x))
+      center = len(corr) // 2
+      half = max_lag
+
+      corr = corr[center - half:center + half + 1]
+      lags = lags[center - half:center + half + 1]
+
+      best_lag = lags[np.argmax(corr)]
+      best_corr = np.max(corr)
+      return best_lag, best_corr, (lags, corr)
+
+    def run_cross_correlation_tests(self, signal_x="Orchestra/PPF20_RATE", signal_y="BIS/BIS", max_lag=60):
+      lag_list, corr_list, case_list = [], [], []
+
+      for cid in self.imputed_signals:
+          x = self.imputed_signals[cid][:, self.variables.index(signal_x)]
+          y = self.imputed_signals[cid][:, self.variables.index(signal_y)]
+
+          result = self.compute_cross_correlation(x, y, max_lag=max_lag)
+          if result[0] is not None:
+              best_lag, best_corr, _ = result
+              lag_list.append(best_lag)
+              corr_list.append(best_corr)
+              case_list.append(cid)
+
+      df_cross = pd.DataFrame({
+        "caseid": case_list,
+        "best_lag": lag_list,
+        "max_corr": corr_list
+      })
+
+      print(df_cross.describe())
+      return df_cross
+
+    def plot_cross_correlation(self, caseid, signal_x, signal_y, max_lag=60):
+      x = self.imputed_signals[caseid][:, self.variables.index(signal_x)]
+      y = self.imputed_signals[caseid][:, self.variables.index(signal_y)]
+
+      result = self.compute_cross_correlation(x, y, max_lag=max_lag)
+      if result[0] is None:
+          print(f"Not enough valid data in case {caseid}")
+          return
+
+      best_lag, best_corr, (lags, corr) = result
+
+      plt.figure(figsize=(10, 5))
+      plt.plot(lags, corr)
+      plt.axvline(0, color='gray', linestyle='--', label="Zero Lag")
+      plt.axvline(best_lag, color='red', linestyle='--', label=f"Best Lag = {best_lag}")
+      plt.title(f"Cross-Correlation: {signal_x} vs {signal_y} (Case {caseid})")
+      plt.xlabel("Lag (samples)")
+      plt.ylabel("Correlation")
+      plt.legend()
+      plt.grid(True)
+      plt.tight_layout()
+      plt.show()
+
+
 #------------------------------------------------------------------
 @st.cache_data
 # def get_global_stats_cached(case_ids, variables):
@@ -659,7 +916,7 @@ def get_global_stats_cached(case_ids, variables, n_samples=100):
 
 # Rewriting Tab 1 with signal group selection, anesthesia type, and bolus exclusions + download buttons
 
-tabs = st.tabs([" Select Cases", " Signal Quality", " Interpolation", " Evaluation", " Export"," analysis"])
+tabs = st.tabs([" Select Cases", " Signal Quality", " Interpolation", " Evaluation", " Export"," analysis","Correlation & T-Test"])
 
 with tabs[0]:
     st.header("Step 1: Select Valid Cases")
@@ -1067,4 +1324,52 @@ with tabs[5]:
                                       default=['sex', 'ane_type', 'optype', 'department', 'position'])
     if categorical_cols:
         plotter.compare_categorical(df_all, df_filtered, categorical_cols)
+#---------------------
+with tabs[6]:
+    st.header("Step 7: Correlation & Statistical Testing")
+
+    if "raw_data" not in st.session_state or "imputed_data" not in st.session_state:
+        st.warning("Please run interpolation first (Tab 3).")
+        st.stop()
+
+    st.subheader("Choose type of statistical test:")
+    test_type = st.selectbox("Test type", [
+        "Pearson correlation + T-Test (all cases)",
+        "Pearson correlation + T-Test (one case)",
+        "Lagged Correlation (all cases)",
+        "Cross Correlation (one case)"
+    ])
+
+    signal_x = st.selectbox("Signal X", st.session_state["variables"])
+    signal_y = st.selectbox("Signal Y", st.session_state["variables"])
+
+    if test_type in ["Pearson correlation + T-Test (one case)", "Cross Correlation (one case)"]:
+        selected_case = st.selectbox("Select Case ID", st.session_state["valid_ids"])
+
+    if st.button("Run Test"):
+        try:
+            tester = StatisticalTester(
+                raw_signals={cid: st.session_state["raw_data"] for cid in [selected_case]} if "one case" in test_type else {cid: st.session_state["raw_data"] for cid in st.session_state["valid_ids"]},
+                imputed_signals={cid: st.session_state["imputed_data"] for cid in [selected_case]} if "one case" in test_type else {cid: st.session_state["imputed_data"] for cid in st.session_state["valid_ids"]},
+                variable_names=st.session_state["variables"]
+            )
+
+            if "Pearson" in test_type:
+                df_results = tester.run_tests()
+                st.dataframe(df_results)
+                st.success("Test completed.")
+                st.session_state["corr_results"] = df_results
+
+            elif "Lagged" in test_type:
+                df_lag = tester.run_lagged_tests(signal_x=signal_x, signal_y=signal_y)
+                st.dataframe(df_lag)
+                tester.plot_lagged_summary(df_lag)
+
+            elif "Cross" in test_type:
+                df_cross = tester.run_cross_correlation_tests(signal_x=signal_x, signal_y=signal_y)
+                st.dataframe(df_cross)
+                tester.plot_cross_correlation(selected_case, signal_x, signal_y)
+
+        except Exception as e:
+            st.error(f"Error during test: {e}")
 
