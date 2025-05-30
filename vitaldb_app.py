@@ -1072,6 +1072,8 @@ with tabs[1]:
                 st.write(" Analyzer was created")
 
                 analyzer.analyze()
+                st.session_state["analyzer_issues"] = analyzer.issues
+
                 summary_df = analyzer.get_summary_table()
                 st.subheader(" Signals statistics table ")
                 st.dataframe(summary_df)
@@ -1256,12 +1258,13 @@ with tabs[3]:
         st.session_state["eval_stats"] = stats_df
         st.session_state["raw_data"] = st.session_state["raw_data"]  # Optional because it already exists but becomes clearer.
         st.session_state["imputed_data"] = st.session_state["imputed_data"]
-        if "BIS/BIS" in analyzer.issues:
-          info = analyzer.issues["BIS/BIS"]
+        if "analyzer_issues" in st.session_state and "BIS/BIS" in st.session_state["analyzer_issues"]:
+          info = st.session_state["analyzer_issues"]["BIS/BIS"]
           st.markdown("### 🧠 NaN Analysis for BIS/BIS")
           st.write(f"🔹 NaN قبل از تبدیل صفرها: **{info.get('nan_before', 'N/A')}**")
           st.write(f"🔸 NaN اضافه‌شده از صفرها: **{info.get('zero_to_nan', 'N/A')}**")
           st.write(f"🔻 NaN باقی‌مانده بعد از درون‌یابی: **{info.get('nan_after_interp', 'N/A')}**")
+
 
 
 
