@@ -306,6 +306,8 @@ class SignalProcessor:
 
             method = self.select_interp_method(signal, var)
             f = interp1d(x[valid_mask], signal[valid_mask], kind=method, fill_value='extrapolate')
+            self.issues[var]["nan_after_interp"] = np.isnan(signal).sum()
+
 
             for gap in gaps:
                 start = gap['start']
