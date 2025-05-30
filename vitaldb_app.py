@@ -1261,13 +1261,19 @@ with tabs[3]:
         st.session_state["raw_data"] = st.session_state["raw_data"]  # Optional because it already exists but becomes clearer.
         st.session_state["imputed_data"] = st.session_state["imputed_data"]
         
-        if "analyzer_issues" in st.session_state:
-          bis_info = st.session_state["analyzer_issues"].get("BIS/BIS", {})
-          for field in ["nan_before", "zero_to_nan", "nan_after_interp"]:
-            if field in bis_info:
-              idx = stats_df[stats_df["variable"] == "BIS/BIS"].index
-              if not idx.empty:
-                stats_df.loc[idx, field] = bis_info[field]
+        # Ensure the columns exist before assignment
+        for field in ["nan_before", "zero_to_nan", "nan_after_interp"]:
+          if field not in stats_df.columns:
+            stats_df[field] = np.nan
+
+          # Now update them if info exists
+          if "analyzer_issues" in st.session_state:
+             bis_info = st.session_state["analyzer_issues"].get("BIS/BIS", {})
+             for field in ["nan_before", "zero_to_nan", "nan_after_interp"]:
+               if field in bis_info:
+                  idx = stats_df[stats_df["variable"] == "BIS/BIS"].index
+               if not idx.empty:
+                  stats_df.loc[idx, field] = bis_info[field]
 
 
 
