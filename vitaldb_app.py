@@ -1258,6 +1258,7 @@ with tabs[3]:
         st.session_state["eval_stats"] = stats_df
         st.session_state["raw_data"] = st.session_state["raw_data"]  # Optional because it already exists but becomes clearer.
         st.session_state["imputed_data"] = st.session_state["imputed_data"]
+        
         if "analyzer_issues" in st.session_state and "BIS/BIS" in st.session_state["analyzer_issues"]:
           info = st.session_state["analyzer_issues"]["BIS/BIS"]
           st.markdown("### 🧠 NaN Analysis for BIS/BIS")
