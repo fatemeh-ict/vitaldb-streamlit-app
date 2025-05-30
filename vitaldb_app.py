@@ -1261,12 +1261,13 @@ with tabs[3]:
         st.session_state["raw_data"] = st.session_state["raw_data"]  # Optional because it already exists but becomes clearer.
         st.session_state["imputed_data"] = st.session_state["imputed_data"]
         
-        if "analyzer_issues" in st.session_state and "BIS/BIS" in st.session_state["analyzer_issues"]:
-          info = st.session_state["analyzer_issues"]["BIS/BIS"]
-          st.markdown("### 🧠 NaN Analysis for BIS/BIS")
-          st.write(f"🔹 NaN قبل از تبدیل صفرها: **{info.get('nan_before', 'N/A')}**")
-          st.write(f"🔸 NaN اضافه‌شده از صفرها: **{info.get('zero_to_nan', 'N/A')}**")
-          st.write(f"🔻 NaN باقی‌مانده بعد از درون‌یابی: **{info.get('nan_after_interp', 'N/A')}**")
+        if "analyzer_issues" in st.session_state:
+          bis_info = st.session_state["analyzer_issues"].get("BIS/BIS", {})
+          for field in ["nan_before", "zero_to_nan", "nan_after_interp"]:
+            if field in bis_info:
+              idx = stats_df[stats_df["variable"] == "BIS/BIS"].index
+              if not idx.empty:
+                stats_df.loc[idx, field] = bis_info[field]
 
 
 
