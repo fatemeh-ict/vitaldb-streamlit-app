@@ -740,10 +740,8 @@ class StatisticalTester:
         print(" Saved boxplots.")
 
     def plot_heatmap(self, output_folder="plots_statistics"):
-        import seaborn as sns
-        import matplotlib.pyplot as plt
-        import numpy as np
-        os.makedirs(output_folder, exist_ok=True)
+        
+        # os.makedirs(output_folder, exist_ok=True)
 
         n = len(self.variables)
         mean_corr_matrix = np.zeros((n, n))
