@@ -724,8 +724,9 @@ class StatisticalTester:
         plt.ylabel("Correlation (Raw vs Imputed)")
         plt.title("Boxplot of Correlations")
         plt.tight_layout()
-        plt.savefig(f"{output_folder}/boxplot_correlation.png")
+        st.pyplot(plt.gcf())
         plt.close()
+        # plt.savefig(f"{output_folder}/boxplot_correlation.png")
 
         # Boxplot p-values
         plt.figure(figsize=(10, 5))
@@ -762,9 +763,10 @@ class StatisticalTester:
         sns.heatmap(df_corr, annot=True, fmt=".2f", cmap="coolwarm", square=True, linewidths=0.5)
         plt.title("Heatmap of Signal Correlations (Imputed Data)")
         plt.tight_layout()
-        plt.savefig(f"{output_folder}/heatmap_correlations.png")
+        st.pyplot(plt.gcf())
+        # plt.savefig(f"{output_folder}/heatmap_correlations.png")
         plt.close()
-        print(" Saved heatmap.")
+        # print(" Saved heatmap.")
 
 
     def compute_lagged_correlation(self, x, y, max_lag=60):
@@ -827,7 +829,8 @@ class StatisticalTester:
       plt.ylabel("Frequency")
 
       plt.tight_layout()
-      plt.show()
+      st.pyplot(plt.gcf())
+      plt.close()
 
 
     def compute_cross_correlation(self, x, y, max_lag=60):
@@ -901,7 +904,8 @@ class StatisticalTester:
       plt.legend()
       plt.grid(True)
       plt.tight_layout()
-      plt.show()
+      st.pyplot(plt.gcf())
+      plt.close()
 
 
 #------------------------------------------------------------------
