@@ -684,7 +684,7 @@ class StatisticalTester:
                 raw = self.raw_signals[cid][:, self.variables.index(var)]
                 imp = self.imputed_signals[cid][:, self.variables.index(var)]
 
-                # ✳️ Make sure raw and imp have the same length
+                # Make sure raw and imp have the same length
                 min_len = min(len(raw), len(imp))
                 raw = raw[:min_len]
                 imp = imp[:min_len]
@@ -855,7 +855,7 @@ class StatisticalTester:
 
       # محاسبه full cross-correlation
       corr = correlate(y - np.mean(y), x - np.mean(x), mode='full')
-      corr /= (np.std(x) * np.std(y) * len(x))  # نرمال‌سازی
+      corr /= (np.std(x) * np.std(y) * len(x))  #Normalization
 
       lags = np.arange(-len(x) + 1, len(x))
       center = len(corr) // 2
@@ -928,7 +928,7 @@ def get_global_stats_cached(case_ids, variables, n_samples=100):
 
 # Rewriting Tab 1 with signal group selection, anesthesia type, and bolus exclusions + download buttons
 
-tabs = st.tabs([" Select Cases", " Signal Quality", " Interpolation", " Evaluation", " Export"," analysis","Correlation & T-Test"])
+tabs = st.tabs([" Select Cases", " Signal Quality", " Interpolation", " Evaluation", " Export"," Analysis","Correlation & T-Test"])
 
 with tabs[0]:
     st.header("Step 1: Select Valid Cases")
