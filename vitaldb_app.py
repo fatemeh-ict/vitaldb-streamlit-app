@@ -223,7 +223,7 @@ class SignalAnalyzer:
                                   row=row, col=1)
 
         fig.update_xaxes(title_text="Time (s)")
-        fig.update_layout(title=f"Signal Diagnostics - Case {self.caseid}", height=200 * len(self.variable_names))
+        fig.update_layout(title=f"Signal Diagnostics - Case {self.caseid}", height=100 * len(self.variable_names))
         # st.plotly_chart(fig, use_container_width=True)
         return fig
 #=====================
@@ -1222,6 +1222,7 @@ with tabs[2]:
             except Exception as e:
                 st.error(f" Error in interpolation: {e}")
 #-------------------------------------------------
+
 with tabs[3]:
     st.header("Step 4: Evaluation of Imputed Signals")
 
@@ -1240,7 +1241,28 @@ with tabs[3]:
             )
             stats_df["caseid"] = st.session_state["selected_case_interp"]
 
+            # اطمینان از وجود ستون‌ها
+            for field in ["nan_before", "zero_to_nan", "nan_after_interp", "zero_nan_ratio(%)"]:
+                if field not in stats_df.columns:
+                    stats_df[field] = np.nan
 
+            # پیام و محاسبه ویژه فقط برای سیگنال BIS/BIS
+            if "analyzer_issues" in st.session_state:
+                bis_info = st.session_state["analyzer_issues"].get("BIS/BIS", {})
+                if "zero_to_nan" in bis_info and "nan_before" in bis_info:
+                    zero_nan = bis_info["zero_to_nan"]
+                    total_nan = bis_info["nan_before"]
+                    ratio = round(100 * zero_nan / total_nan, 2) if total_nan else 0
+
+                    # پیام به کاربر
+                    st.info(f"🔍 از بین {total_nan} مقدار NaN در سیگنال BIS قبل از درون‌یابی، تعداد {zero_nan} مقدار (معادل {ratio}٪) به دلیل مقدار صفر بوده و به NaN تبدیل شده‌اند.")
+
+                    # درج درصد فقط برای BIS در جدول آمار
+                    idx = stats_df[stats_df["variable"] == "BIS/BIS"].index
+                    if not idx.empty:
+                        stats_df.loc[idx, "zero_nan_ratio(%)"] = ratio
+
+            # نمایش آمار همه سیگنال‌ها
             st.subheader("Statistics before and after interpolation")
             st.dataframe(stats_df)
 
@@ -1251,33 +1273,75 @@ with tabs[3]:
             fig = evaluator.plot_comparison(max_points=1000)
             st.pyplot(fig)
 
-            # Save for final output
+            # ذخیره در session_state
             st.session_state["eval_stats"] = stats_df
 
         except Exception as e:
             st.error(f" Error in comparative analysis: {e}")
+
+
+
+#------------------------------------
+# with tabs[3]:
+#     st.header("Step 4: Evaluation of Imputed Signals")
+
+#     if "raw_data" not in st.session_state or "imputed_data" not in st.session_state:
+#         st.warning(" First, perform the interpolation step..")
+#     else:
+#         try:
+#             evaluator = Evaluator(
+#                 raw_data=st.session_state["raw_data"],
+#                 imputed_data=st.session_state["imputed_data"],
+#                 variable_names=st.session_state["variables"]
+#             )
+
+#             stats_df, length_df = evaluator.compute_stats(
+#                 raw_length=st.session_state["raw_data"].shape[0]
+#             )
+#             stats_df["caseid"] = st.session_state["selected_case_interp"]
+
+
+#             st.subheader("Statistics before and after interpolation")
+#             st.dataframe(stats_df)
+
+#             st.subheader(" Signal length information")
+#             st.table(length_df)
+
+#             st.subheader("Signals comparison chart")
+#             fig = evaluator.plot_comparison(max_points=1000)
+#             st.pyplot(fig)
+
+#             # Save for final output
+#             st.session_state["eval_stats"] = stats_df
+
+#         except Exception as e:
+#             st.error(f" Error in comparative analysis: {e}")
             
-        st.session_state["eval_stats"] = stats_df
-        st.session_state["raw_data"] = st.session_state["raw_data"]  # Optional because it already exists but becomes clearer.
-        st.session_state["imputed_data"] = st.session_state["imputed_data"]
+#         st.session_state["eval_stats"] = stats_df
+#         st.session_state["raw_data"] = st.session_state["raw_data"]  # Optional because it already exists but becomes clearer.
+#         st.session_state["imputed_data"] = st.session_state["imputed_data"]
         
-        # Ensure the columns exist before assignment
-        for field in ["nan_before", "zero_to_nan", "nan_after_interp"]:
-            if field not in stats_df.columns:
-                stats_df[field] = np.nan
+#         # Ensure the columns exist before assignment
+#         for field in ["nan_before", "zero_to_nan", "nan_after_interp"]:
+#             if field not in stats_df.columns:
+#                 stats_df[field] = np.nan
+#         # نمایش تعداد NaNهای ناشی از صفر بودن سیگنال BIS
+#         if "analyzer_issues" in st.session_state:
+#             bis_info = st.session_state["analyzer_issues"].get("BIS/BIS", {})
+#             if "zero_to_nan" in bis_info and "nan_before" in bis_info:
+#                 zero_nan = bis_info["zero_to_nan"]
+#                 total_nan = bis_info["nan_before"]
+#                 ratio = round(100 * zero_nan / total_nan, 2) if total_nan else 0
+           
 
-        # Now update them if info exists
-        if "analyzer_issues" in st.session_state:
-            bis_info = st.session_state["analyzer_issues"].get("BIS/BIS", {})
-            for field in ["nan_before", "zero_to_nan", "nan_after_interp"]:
-                if field in bis_info:
-                    idx = stats_df[stats_df["variable"] == "BIS/BIS"].index
-                    if not idx.empty:
-                        stats_df.loc[idx, field] = bis_info[field]
+#         # پیام واضح برای کاربر
+#                 st.info(f"🔍 از بین {total_nan} مقدار NaN در سیگنال BIS قبل از درون‌یابی، تعداد {zero_nan} مقدار (معادل {ratio}٪) به دلیل مقدار صفر بوده و به NaN تبدیل شده‌اند.")
+#                     idx = stats_df[stats_df["variable"] == "BIS/BIS"].index
+#                     if not idx.empty:
+#                       stats_df.loc[idx, "zero_nan_ratio(%)"] = ratio
 
-
-
-
+#         st.subheader("Statistics before and after interpolation")
+#         st.dataframe(stats_df)
 
 #----------------------------------------------
 with tabs[4]:
