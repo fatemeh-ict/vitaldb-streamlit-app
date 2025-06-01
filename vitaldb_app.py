@@ -1451,3 +1451,62 @@ with tabs[6]:
 # ----------------------------------------
 with tabs[7]:
     st.header("Step 7: Machine Learning Model")
+   
+
+    # انتخاب مدل
+    model_type = st.selectbox("انتخاب مدل", options=["Random Forest (rf)", "CNN (cnn)", "LSTM (lstm)"])
+    model_key = model_type.split()[0].lower()
+
+    # تنظیمات مدل
+    if model_key in ["cnn", "lstm"]:
+        epochs = st.number_input("تعداد Epochs", min_value=1, max_value=100, value=10)
+        batch_size = st.number_input("Batch Size", min_value=1, max_value=128, value=32)
+    else:
+        epochs, batch_size = None, None
+
+    # انتخاب متغیرهای ورودی برای مدل (مثلا BIS، HeartRate، DrugRate و ...)
+    # فرض می‌کنیم لیست متغیرها از قبل در st.session_state ذخیره شده
+    if "variables" in st.session_state:
+        selected_vars = st.multiselect("انتخاب متغیرهای ورودی", options=st.session_state["variables"], default=st.session_state["variables"])
+    else:
+        st.warning("متغیرهای ورودی در دسترس نیستند. ابتدا داده‌ها را بارگذاری کنید.")
+        selected_vars = []
+
+    # انتخاب کیس ایدی
+    caseid = st.number_input("Case ID برای تست مدل", min_value=1, max_value=10000, value=3)
+
+    # ساخت شیء مدل
+    detector = ArtifactDetector(model_type=model_key, epochs=epochs or 10, batch_size=batch_size or 32)
+
+    # دکمه آموزش مدل روی داده مصنوعی
+    if st.button("آموزش مدل روی داده مصنوعی"):
+        with st.spinner("در حال آموزش مدل..."):
+            detector.train_on_synthetic(signal_length=1000)
+        st.success("آموزش مدل با داده مصنوعی کامل شد.")
+
+    # دکمه آموزش روی داده واقعی (اگر داده واقعی در دسترس باشد)
+    if st.button("آموزش مدل روی داده واقعی"):
+        # فرض: داده واقعی X_real, y_real در st.session_state ذخیره شده
+        if "X_real" in st.session_state and "y_real" in st.session_state:
+            X_real = st.session_state["X_real"][:, selected_vars]
+            y_real = st.session_state["y_real"]
+            with st.spinner("در حال آموزش مدل روی داده واقعی..."):
+                detector.train_on_real(X_real, y_real)
+            st.success("آموزش مدل روی داده واقعی کامل شد.")
+        else:
+            st.error("داده واقعی در دسترس نیست.")
+
+    # دکمه ارزیابی مدل روی کیس انتخابی
+    if st.button("ارزیابی مدل روی کیس انتخابی"):
+        # فرض: مقادیر global medians و mads در st.session_state موجودند
+        if "global_medians" in st.session_state and "global_mads" in st.session_state:
+            with st.spinner("در حال ارزیابی مدل..."):
+                detector.compare_artifact_detection(
+                    global_medians=st.session_state["global_medians"],
+                    global_mads=st.session_state["global_mads"],
+                    caseid=caseid,
+                    target_variable=selected_vars[0] if selected_vars else "BIS/BIS"
+                )
+        else:
+            st.error("مقادیر global median و mad موجود نیستند.")
+
