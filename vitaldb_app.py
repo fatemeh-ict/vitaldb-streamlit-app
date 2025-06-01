@@ -11,6 +11,13 @@ import seaborn as sns
 import random
 from scipy.stats import pearsonr
 from scipy.signal import correlate
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import StandardScaler
+from sklearn.metrics import classification_report, confusion_matrix
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Dense, Conv1D, MaxPooling1D, Flatten, LSTM
+from tensorflow.keras.optimizers import Adam
 
 # ==========================
 # Class: CaseSelector
@@ -914,6 +921,272 @@ class StatisticalTester:
       plt.tight_layout()
       st.pyplot(plt.gcf())
       plt.close()
+#=======================
+#Machine learning
+#=====================================
+
+
+class ArtifactDetector:
+    def __init__(self, model_type="rf", window_size=30, epochs=10, batch_size=32):
+        # self.model = RandomForestClassifier(n_estimators=100, random_state=42)
+        self.model_type = model_type.lower()
+        self.window_size = window_size
+        self.scaler = StandardScaler()
+        self.epochs = epochs
+        self.batch_size = batch_size
+        self.model = None
+        self.trained = False
+
+    def generate_clean_signal(self,length=1000):
+      time = np.arange(length)
+      signal = 50 + 10 * np.sin(2 * np.pi * time / 200) + np.random.normal(0, 2, length)
+      return signal
+
+    def inject_artifacts(self,signal, global_median=50, global_mad=10):
+      signal = signal.copy()
+      label = np.zeros(len(signal))  # 0 = clean, 1 = artifact
+
+      # Inject NaNs (as missing values)
+      nan_indices = np.random.choice(len(signal), size=int(0.05 * len(signal)), replace=False)
+      signal[nan_indices] = np.nan
+      label[nan_indices] = 1
+
+      # Inject outliers (based on median ± 3.5 * MAD)
+      outlier_indices = np.random.choice(len(signal), size=int(0.05 * len(signal)), replace=False)
+      signal[outlier_indices] = global_median + 5 * global_mad
+      label[outlier_indices] = 1
+
+      # Inject jumps (based on diff > 3.5 * MAD)
+      jump_indices = np.random.choice(len(signal) - 1, size=int(0.02 * len(signal)), replace=False)
+      for idx in jump_indices:
+          signal[idx + 1] = signal[idx] + 4 * global_mad
+          label[idx + 1] = 1
+
+      return signal, label
+
+  # STEP 2: Feature extraction from signal for ML
+    def extract_features(self,signal):
+      features = []
+      indices = []
+      for i in range(2, len(signal)-2):
+          window = signal[i-2:i+3]  # 5-point window
+          if np.isnan(window).any():
+              continue
+          diff1 = window[2] - window[1]
+          diff2 = window[3] - window[2]
+          diff3 = window[4] - window[3]
+          std = np.std(window)
+          features.append([window[2], diff1, diff2, diff3, std])
+          indices.append(i)
+      return np.array(features), np.array(indices)
+
+    def extract_sequences(self, signal, labels):
+        X, y = [], []
+        for i in range(len(signal) - self.window_size):
+            window = signal[i:i + self.window_size]
+            if np.isnan(window).any():
+                continue
+            X.append(window.reshape(-1, 1))
+            y.append(labels[i + self.window_size - 1])
+        return np.array(X), np.array(y)
+
+    def build_dl_model(self, input_shape):
+        if self.model_type == "cnn":
+            model = Sequential([
+                Conv1D(32, kernel_size=3, activation='relu', input_shape=input_shape),
+                MaxPooling1D(pool_size=2),
+                Flatten(),
+                Dense(64, activation='relu'),
+                Dense(1, activation='sigmoid')
+            ])
+        elif self.model_type == "lstm":
+            model = Sequential([
+                LSTM(64, input_shape=input_shape),
+                Dense(64, activation='relu'),
+                Dense(1, activation='sigmoid')
+            ])
+        model.compile(optimizer=Adam(learning_rate=0.001), loss='binary_crossentropy', metrics=['accuracy'])
+        return model
+
+
+    def train_on_synthetic(self, signal_length=1000):
+        signal = self.generate_clean_signal(signal_length)
+        global_median = np.median(signal)
+        global_mad = np.median(np.abs(signal - global_median)) or 1e-6
+        signal, labels = self.inject_artifacts(signal, global_median, global_mad)
+
+        if self.model_type == "rf":
+            features, indices = self.extract_features(signal)
+            labels_aligned = labels[indices]
+            X_train, X_test, y_train, y_test = train_test_split(features, labels_aligned, test_size=0.2)
+            self.scaler.fit(X_train)
+            X_train_scaled = self.scaler.transform(X_train)
+            X_test_scaled = self.scaler.transform(X_test)
+            self.model = RandomForestClassifier(n_estimators=100)
+            self.model.fit(X_train_scaled, y_train)
+            y_pred = self.model.predict(X_test_scaled)
+
+        elif self.model_type in ["cnn", "lstm"]:
+            X, y = self.extract_sequences(signal, labels)
+            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+            self.model = self.build_dl_model(X.shape[1:])
+            self.model.fit(X_train, y_train, epochs=self.epochs, batch_size=self.batch_size, verbose=0)
+            y_pred = (self.model.predict(X_test) > 0.5).astype("int32")
+
+        print("\n Synthetic Data Evaluation:")
+        print(classification_report(y_test, y_pred))
+        self.trained = True
+
+      
+
+    def train_on_real(self, X_real, y_real):
+
+        if self.model_type == "rf":
+        #  Random Forest: نیاز به scale و استخراج ویژگی دارد
+          X_train, X_test, y_train, y_test = train_test_split(X_real, y_real, test_size=0.2, random_state=42)
+          self.scaler.fit(X_train)
+          X_train_scaled = self.scaler.transform(X_train)
+          X_test_scaled = self.scaler.transform(X_test)
+
+          self.model.fit(X_train_scaled, y_train)
+          y_pred = self.model.predict(X_test_scaled)
+
+        elif self.model_type in ["cnn", "lstm"]:
+        #  CNN/LSTM: داده باید به شکل sequences باشد → (samples, timesteps, features)
+          X_real = np.array(X_real)
+          y_real = np.array(y_real)
+          if len(X_real.shape) != 3:
+              raise ValueError("Expected 3D input for CNN/LSTM")
+
+          X_train, X_test, y_train, y_test = train_test_split(X_real, y_real, test_size=0.2, random_state=42)
+
+          self.model.fit(X_train, y_train, epochs=self.epochs, batch_size=self.batch_size, validation_data=(X_test, y_test), verbose=1)
+          y_pred_probs = self.model.predict(X_test)
+          y_pred = (y_pred_probs > 0.5).astype(int).flatten()
+
+        else:
+          raise ValueError("Unsupported model type for real training.")
+
+    # 🧾 گزارش
+        print(" Real Data Evaluation:")
+        print(classification_report(y_test, y_pred))
+        self.plot_confusion_matrix(y_test, y_pred)
+
+
+    def predict(self, features):
+        # X_scaled = self.scaler.transform(features)
+        # return self.model.predict(X_scaled)
+        if self.model_type == "rf":
+          X_scaled = self.scaler.transform(features)
+          return self.model.predict(X_scaled)
+        elif self.model_type in ["cnn", "lstm"]:
+          preds = self.model.predict(features)
+          return (preds > 0.5).astype("int32")
+
+    def plot_feature_importance(self):
+        importances = self.model.feature_importances_
+        plt.figure(figsize=(8, 5))
+        sns.barplot(x=importances, y=[f"Feature {i}" for i in range(len(importances))], palette="viridis")
+        plt.title("Feature Importance")
+        plt.xlabel("Importance")
+        plt.tight_layout()
+        plt.show()
+
+    def plot_confusion_matrix(self, y_true, y_pred):
+        cm = confusion_matrix(y_true, y_pred)
+        plt.figure(figsize=(6, 5))
+        sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=["Clean", "Artifact"], yticklabels=["Clean", "Artifact"])
+        plt.title("Confusion Matrix")
+        plt.xlabel("Predicted")
+        plt.ylabel("Actual")
+        plt.tight_layout()
+        plt.show()
+
+    def compare_artifact_detection(self, global_medians, global_mads, caseid=3, target_variable="BIS/BIS"):
+
+
+      # دریافت سیگنال
+      data = vitaldb.load_case(caseid, [target_variable], interval=1)
+      if data is None or data.shape[0] < 10:
+          print(f"Case {caseid} has insufficient data.")
+          return
+
+      analyzer = SignalAnalyzer(
+        caseid=caseid,
+        data=data,
+        variable_names=[target_variable],
+        global_medians={target_variable: global_medians[target_variable]},
+        global_mads={target_variable: global_mads[target_variable]},
+        plot=False
+       )
+      analyzer.analyze()
+
+      signal = data[:, 0]
+      label_vector = np.zeros(len(signal))
+
+      for idx in analyzer.issues[target_variable]['nan'] + \
+               analyzer.issues[target_variable]['outlier'] + \
+               analyzer.issues[target_variable]['jump']:
+        if idx < len(label_vector):
+            label_vector[idx] = 1
+
+      if self.model_type == "rf":
+        features, indices = self.extract_features(signal)
+        if len(features) == 0:
+          print(" No valid features extracted for RF model.")
+          return
+        gt_labels = label_vector[indices]
+        ml_labels = self.predict(features)
+
+      elif self.model_type in ["cnn", "lstm"]:
+        X_seq, y_seq = self.extract_sequences(signal, label_vector)
+        if X_seq.size == 0:
+            print("No valid sequences extracted for CNN/LSTM model.")
+            return
+        gt_labels = y_seq
+        ml_labels = self.predict(X_seq).flatten()
+
+      else:
+        raise ValueError("Unsupported model type.")
+
+      # استخراج ویژگی‌ها و لیبل‌های پیش‌بینی‌شده
+      # features, indices =self. extract_features(signal)
+      # gt_labels = label_vector[indices]  # ground truth
+      # ml_labels = self.predict(features)
+
+
+      #  ارزیابی مدل ML در برابر لیبل کلاسیک
+      print(f"\nEvaluation for case {caseid}, variable: {target_variable}")
+      print(classification_report(gt_labels, ml_labels))
+      print("Confusion Matrix:")
+      cm = confusion_matrix(gt_labels, ml_labels)
+      print(cm)
+
+      # رسم Confusion Matrix
+      plt.figure(figsize=(5, 4))
+      sns.heatmap(cm, annot=True, fmt='d', cmap='Blues',
+                  xticklabels=["Clean", "Artifact"], yticklabels=["Clean", "Artifact"])
+      plt.title("Confusion Matrix")
+      plt.xlabel("Predicted")
+      plt.ylabel("Actual")
+      plt.tight_layout()
+      plt.show()
+
+      #رسم نمودار بصری روی سیگنال
+      plt.figure(figsize=(15, 5))
+      plt.plot(signal, label='Signal', alpha=0.6)
+      if self.model_type == "rf":
+        plot_indices=indices
+      else:
+        plot_indices=np.arange(len(gt_labels))
+
+      plt.scatter(plot_indices[gt_labels == 1], signal[plot_indices][gt_labels == 1], label='Classic Artifacts', color='blue', marker='x')
+      plt.scatter(plot_indices[ml_labels == 1], signal[plot_indices][ml_labels == 1], label='ML Artifacts', color='red', marker='o')
+      plt.title(f"Case {caseid} - Artifact Comparison")
+      plt.legend()
+      plt.grid(True)
+      plt.show()
+
 
 
 #------------------------------------------------------------------
@@ -1450,63 +1723,34 @@ with tabs[6]:
 
 # ----------------------------------------
 with tabs[7]:
-    st.header("Step 7: Machine Learning Model")
-   
+    st.header("Step 8: Machine Learning Artifact Detection")
 
-    # انتخاب مدل
-    model_type = st.selectbox("انتخاب مدل", options=["Random Forest (rf)", "CNN (cnn)", "LSTM (lstm)"])
-    model_key = model_type.split()[0].lower()
+    model_type = st.selectbox("Choose ML model", ["Random Forest (RF)", "CNN", "LSTM"])
+    model_key = {"Random Forest (RF)": "rf", "CNN": "cnn", "LSTM": "lstm"}[model_type]
 
-    # تنظیمات مدل
-    if model_key in ["cnn", "lstm"]:
-        epochs = st.number_input("تعداد Epochs", min_value=1, max_value=100, value=10)
-        batch_size = st.number_input("Batch Size", min_value=1, max_value=128, value=32)
-    else:
-        epochs, batch_size = None, None
+    if st.button("Train on Synthetic Data"):
+        detector = ArtifactDetector(model_type=model_key)
+        detector.train_on_synthetic()
+        st.session_state["detector"] = detector
+        st.success("Synthetic model trained and ready.")
 
-    # انتخاب متغیرهای ورودی برای مدل (مثلا BIS، HeartRate، DrugRate و ...)
-    # فرض می‌کنیم لیست متغیرها از قبل در st.session_state ذخیره شده
-    if "variables" in st.session_state:
-        selected_vars = st.multiselect("انتخاب متغیرهای ورودی", options=st.session_state["variables"], default=st.session_state["variables"])
-    else:
-        st.warning("متغیرهای ورودی در دسترس نیستند. ابتدا داده‌ها را بارگذاری کنید.")
-        selected_vars = []
+    if "detector" in st.session_state:
+        detector = st.session_state["detector"]
+        st.subheader("Evaluate on Real VitalDB Signal")
 
-    # انتخاب کیس ایدی
-    caseid = st.number_input("Case ID برای تست مدل", min_value=1, max_value=10000, value=3)
+        selected_case = st.selectbox("Choose a Case for Evaluation", st.session_state["valid_ids"], key="ml_case")
+        selected_signal = st.selectbox("Choose Signal", st.session_state["variables"], key="ml_signal")
 
-    # ساخت شیء مدل
-    detector = ArtifactDetector(model_type=model_key, epochs=epochs or 10, batch_size=batch_size or 32)
-
-    # دکمه آموزش مدل روی داده مصنوعی
-    if st.button("آموزش مدل روی داده مصنوعی"):
-        with st.spinner("در حال آموزش مدل..."):
-            detector.train_on_synthetic(signal_length=1000)
-        st.success("آموزش مدل با داده مصنوعی کامل شد.")
-
-    # دکمه آموزش روی داده واقعی (اگر داده واقعی در دسترس باشد)
-    if st.button("آموزش مدل روی داده واقعی"):
-        # فرض: داده واقعی X_real, y_real در st.session_state ذخیره شده
-        if "X_real" in st.session_state and "y_real" in st.session_state:
-            X_real = st.session_state["X_real"][:, selected_vars]
-            y_real = st.session_state["y_real"]
-            with st.spinner("در حال آموزش مدل روی داده واقعی..."):
-                detector.train_on_real(X_real, y_real)
-            st.success("آموزش مدل روی داده واقعی کامل شد.")
-        else:
-            st.error("داده واقعی در دسترس نیست.")
-
-    # دکمه ارزیابی مدل روی کیس انتخابی
-    if st.button("ارزیابی مدل روی کیس انتخابی"):
-        # فرض: مقادیر global medians و mads در st.session_state موجودند
-        if "global_medians" in st.session_state and "global_mads" in st.session_state:
-            with st.spinner("در حال ارزیابی مدل..."):
+        if st.button("Run ML Evaluation on Case"):
+            try:
                 detector.compare_artifact_detection(
                     global_medians=st.session_state["global_medians"],
                     global_mads=st.session_state["global_mads"],
-                    caseid=caseid,
-                    target_variable=selected_vars[0] if selected_vars else "BIS/BIS"
+                    caseid=selected_case,
+                    target_variable=selected_signal
                 )
-        else:
-            st.error("مقادیر global median و mad موجود نیستند.")
-
+                st.success("ML evaluation completed.")
+            except Exception as e:
+                st.error(f"Error during ML evaluation: {e}")
+    else:
+        st.info("Please train the model on synthetic data first.")
