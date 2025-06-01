@@ -1448,3 +1448,6 @@ with tabs[6]:
         except Exception as e:
             st.error(f"Error during test: {e}")
 
+# ----------------------------------------
+with tabs[7]:
+    st.header("Step 7: Machine Learning Model")
