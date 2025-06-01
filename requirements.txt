@@ -6,5 +6,7 @@ vitaldb
 matplotlib
 scipy
 seaborn
+scikit-learn
+tensorflow
 
 
