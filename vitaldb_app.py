@@ -1728,14 +1728,24 @@ with tabs[7]:
     model_type = st.selectbox("Choose ML model", ["Random Forest (RF)", "CNN", "LSTM"])
     model_key = {"Random Forest (RF)": "rf", "CNN": "cnn", "LSTM": "lstm"}[model_type]
 
-    # دکمه آموزش روی داده مصنوعی (همان‌طور که دارید)
+    # =======================
+    # 1. Train on Synthetic Data
+    # =======================
     if st.button("Train on Synthetic Data"):
         detector = ArtifactDetector(model_type=model_key)
         detector.train_on_synthetic()
         st.session_state["detector"] = detector
-        st.success("Synthetic model trained and ready.")
 
-    # ✅👇 اضافه کردن آموزش روی داده واقعی
+        # نمایش گزارش کلی
+        report = classification_report(detector.y_test, detector.y_pred, output_dict=True)
+        st.subheader("Synthetic Data Evaluation Report")
+        st.write(pd.DataFrame(report).transpose())
+
+        st.success("Synthetic model trained and evaluated.")
+
+    # =======================
+    # 2. Train on Real VitalDB Case
+    # =======================
     if "detector" in st.session_state:
         detector = st.session_state["detector"]
 
@@ -1770,14 +1780,31 @@ with tabs[7]:
                 X_real, y_real = detector.extract_sequences(signal, label_vector)
 
             detector.train_on_real(X_real, y_real)
+
+            # ذخیره y برای نمایش گزارش بعدی
+            st.session_state["y_test_real"] = detector.y_test
+            st.session_state["y_pred_real"] = detector.y_pred
+
             st.success("Model trained on real signal successfully.")
 
-        # ✅ کد ارزیابی پس از آموزش
-        st.subheader("Evaluate on Real VitalDB Signal")
-        selected_case = st.selectbox("Choose a Case for Evaluation", st.session_state["valid_ids"], key="ml_case")
+    # =======================
+    # 3. Show Evaluation Results on Real Data
+    # =======================
+    if "y_test_real" in st.session_state and "y_pred_real" in st.session_state:
+        st.subheader("Real Data Model Evaluation Report")
+        real_report = classification_report(st.session_state["y_test_real"], st.session_state["y_pred_real"], output_dict=True)
+        st.write(pd.DataFrame(real_report).transpose())
+
+    # =======================
+    # 4. Compare on Specific Case
+    # =======================
+    if "detector" in st.session_state:
+        st.subheader("Compare ML vs Classical Detection on a Case")
+
+        selected_case = st.selectbox("Choose a Case for Comparison", st.session_state["valid_ids"], key="ml_case")
         selected_signal = st.selectbox("Choose Signal", st.session_state["variables"], key="ml_signal")
 
-        if st.button("Run ML Evaluation on Case"):
+        if st.button("Compare ML vs Classical Artifacts"):
             try:
                 detector.compare_artifact_detection(
                     global_medians=st.session_state["global_medians"],
@@ -1785,7 +1812,8 @@ with tabs[7]:
                     caseid=selected_case,
                     target_variable=selected_signal
                 )
-                st.success("ML evaluation completed.")
+                st.success("ML vs Classical comparison completed.")
             except Exception as e:
-                st.error(f"Error during ML evaluation: {e}")
+                st.error(f"Error during comparison: {e}")
+
 
