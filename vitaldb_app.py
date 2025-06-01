@@ -1728,16 +1728,52 @@ with tabs[7]:
     model_type = st.selectbox("Choose ML model", ["Random Forest (RF)", "CNN", "LSTM"])
     model_key = {"Random Forest (RF)": "rf", "CNN": "cnn", "LSTM": "lstm"}[model_type]
 
+    # دکمه آموزش روی داده مصنوعی (همان‌طور که دارید)
     if st.button("Train on Synthetic Data"):
         detector = ArtifactDetector(model_type=model_key)
         detector.train_on_synthetic()
         st.session_state["detector"] = detector
         st.success("Synthetic model trained and ready.")
 
+    # ✅👇 اضافه کردن آموزش روی داده واقعی
     if "detector" in st.session_state:
         detector = st.session_state["detector"]
-        st.subheader("Evaluate on Real VitalDB Signal")
 
+        st.subheader("Train on Real VitalDB Case")
+        caseid_real = st.selectbox("Select a Case for Real Training", st.session_state["valid_ids"], key="real_train_case")
+        signal_var = st.selectbox("Select Signal", st.session_state["variables"], key="real_train_signal")
+
+        if st.button("Train on Real Data"):
+            signal_data = vitaldb.load_case(caseid_real, [signal_var], interval=1)
+            analyzer = SignalAnalyzer(
+                caseid=caseid_real,
+                data=signal_data,
+                variable_names=[signal_var],
+                global_medians=st.session_state["global_medians"],
+                global_mads=st.session_state["global_mads"],
+                plot=False
+            )
+            analyzer.analyze()
+
+            signal = signal_data[:, 0]
+            label_vector = np.zeros(len(signal))
+            for idx in analyzer.issues[signal_var]['nan'] + \
+                    analyzer.issues[signal_var]['outlier'] + \
+                    analyzer.issues[signal_var]['jump']:
+                if idx < len(label_vector):
+                    label_vector[idx] = 1
+
+            if model_key == "rf":
+                X_real, idxs = detector.extract_features(signal)
+                y_real = label_vector[idxs]
+            else:
+                X_real, y_real = detector.extract_sequences(signal, label_vector)
+
+            detector.train_on_real(X_real, y_real)
+            st.success("Model trained on real signal successfully.")
+
+        # ✅ کد ارزیابی پس از آموزش
+        st.subheader("Evaluate on Real VitalDB Signal")
         selected_case = st.selectbox("Choose a Case for Evaluation", st.session_state["valid_ids"], key="ml_case")
         selected_signal = st.selectbox("Choose Signal", st.session_state["variables"], key="ml_signal")
 
@@ -1752,5 +1788,4 @@ with tabs[7]:
                 st.success("ML evaluation completed.")
             except Exception as e:
                 st.error(f"Error during ML evaluation: {e}")
-    else:
-        st.info("Please train the model on synthetic data first.")
+
