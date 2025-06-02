@@ -1035,8 +1035,10 @@ class ArtifactDetector:
 
         print("\n Synthetic Data Evaluation:")
         print(classification_report(y_test, y_pred))
+       
+        self.y_test = y_test         # 👈 اضافه کن
+        self.y_pred = y_pred         # 👈 اضافه کن
         self.trained = True
-
       
 
     def train_on_real(self, X_real, y_real):
