@@ -1723,132 +1723,87 @@ with tabs[6]:
 
 # ----------------------------------------
 
-# فرض بر این است که کلاس ArtifactDetector و SignalAnalyzer قبلاً تعریف شده‌اند
-
 with tabs[7]:
     st.header("Step 8: Machine Learning Artifact Detection")
 
     model_type = st.selectbox("Choose ML model", ["Random Forest (RF)", "CNN", "LSTM"])
     model_key = {"Random Forest (RF)": "rf", "CNN": "cnn", "LSTM": "lstm"}[model_type]
 
-    # آموزش روی داده‌های مصنوعی
+    # =======================
+    # 1. آموزش روی داده‌های مصنوعی
+    # =======================
     if st.button("Train on Synthetic Data"):
         detector = ArtifactDetector(model_type=model_key)
         detector.train_on_synthetic()
         st.session_state["detector"] = detector
         st.session_state["y_test_syn"] = detector.y_test
         st.session_state["y_pred_syn"] = detector.y_pred
-        st.success(" Synthetic model trained.")
+        st.success("✅ Synthetic model trained.")
 
     if "y_test_syn" in st.session_state and "y_pred_syn" in st.session_state:
-        st.subheader(" Synthetic Data Evaluation Report")
+        st.subheader("📊 Synthetic Data Evaluation Report")
         report_syn = classification_report(st.session_state["y_test_syn"], st.session_state["y_pred_syn"], output_dict=True)
         st.write(pd.DataFrame(report_syn).transpose())
-
-        st.subheader("Confusion Matrix - Synthetic Data")
+        st.subheader("Confusion Matrix - Synthetic")
         fig_syn, ax = plt.subplots()
         sns.heatmap(confusion_matrix(st.session_state["y_test_syn"], st.session_state["y_pred_syn"]),
                     annot=True, fmt='d', cmap='Blues', ax=ax,
                     xticklabels=["Clean", "Artifact"], yticklabels=["Clean", "Artifact"])
         st.pyplot(fig_syn)
 
-    # آموزش روی یک کیس واقعی خاص
+    # =======================
+    # 2. آموزش سراسری روی تمام کیس‌های واقعی برای یک سیگنال خاص
+    # =======================
     if "detector" in st.session_state:
         detector = st.session_state["detector"]
-        st.subheader(" Train on One Real Case")
+        st.subheader("📚 Train on All Real Cases")
 
-        caseid_real = st.selectbox("Select Real Case", st.session_state["valid_ids"], key="real_train_case")
-        signal_var = st.selectbox("Select Signal", st.session_state["variables"], key="real_train_signal")
+        selected_signal_all = st.selectbox("Select Signal for Global Training", st.session_state["variables"], key="train_all_signal")
 
-        if st.button("Train on Real Case"):
-            signal_data = vitaldb.load_case(caseid_real, [signal_var], interval=1)
-            analyzer = SignalAnalyzer(
-                caseid=caseid_real,
-                data=signal_data,
-                variable_names=[signal_var],
-                global_medians=st.session_state["global_medians"],
-                global_mads=st.session_state["global_mads"],
-                plot=False
-            )
-            analyzer.analyze()
+        if st.button("Train on All Real Data"):
+            X_all, y_all = [], []
+            for caseid in st.session_state["valid_ids"]:
+                try:
+                    signal_data = vitaldb.load_case(caseid, [selected_signal_all], interval=1)
+                    analyzer = SignalAnalyzer(
+                        caseid=caseid,
+                        data=signal_data,
+                        variable_names=[selected_signal_all],
+                        global_medians=st.session_state["global_medians"],
+                        global_mads=st.session_state["global_mads"],
+                        plot=False
+                    )
+                    analyzer.analyze()
 
-            signal = signal_data[:, 0]
-            label_vector = np.zeros(len(signal))
-            for idx in analyzer.issues[signal_var]['nan'] + \
-                       analyzer.issues[signal_var]['outlier'] + \
-                       analyzer.issues[signal_var]['jump']:
-                if idx < len(label_vector):
-                    label_vector[idx] = 1
+                    signal = signal_data[:, 0]
+                    label_vector = np.zeros(len(signal))
+                    for idx in analyzer.issues[selected_signal_all]['nan'] + \
+                               analyzer.issues[selected_signal_all]['outlier'] + \
+                               analyzer.issues[selected_signal_all]['jump']:
+                        if idx < len(label_vector):
+                            label_vector[idx] = 1
 
-            if model_key == "rf":
-                X_real, idxs = detector.extract_features(signal)
-                y_real = label_vector[idxs]
-            else:
-                X_real, y_real = detector.extract_sequences(signal, label_vector)
+                    if model_key == "rf":
+                        X_case, idxs = detector.extract_features(signal)
+                        y_case = label_vector[idxs]
+                    else:
+                        X_case, y_case = detector.extract_sequences(signal, label_vector)
 
-            detector.train_on_real(X_real, y_real)
-            st.session_state["y_test_real"] = detector.y_test
-            st.session_state["y_pred_real"] = detector.y_pred
-            st.success(" Model trained on one real case.")
+                    X_all.append(X_case)
+                    y_all.append(y_case)
+                except:
+                    continue
 
-    if "y_test_real" in st.session_state and "y_pred_real" in st.session_state:
-        st.subheader(" Real Data Evaluation Report (One Case)")
-        report_real = classification_report(st.session_state["y_test_real"], st.session_state["y_pred_real"], output_dict=True)
-        st.write(pd.DataFrame(report_real).transpose())
-
-        st.subheader("Confusion Matrix - Real Data (One Case)")
-        fig_real, ax = plt.subplots()
-        sns.heatmap(confusion_matrix(st.session_state["y_test_real"], st.session_state["y_pred_real"]),
-                    annot=True, fmt='d', cmap='Purples', ax=ax,
-                    xticklabels=["Clean", "Artifact"], yticklabels=["Clean", "Artifact"])
-        st.pyplot(fig_real)
-
-    # آموزش سراسری روی همه کیس‌ها برای یک سیگنال خاص
-    if "detector" in st.session_state:
-        st.subheader(" Train on All Real Cases for a Signal")
-
-        signal_all = st.selectbox("Signal for All Cases Training", st.session_state["variables"], key="all_signal")
-
-        if st.button("Train on All Real Cases"):
-            all_signals, all_labels = [], []
-            for cid in st.session_state["valid_ids"]:
-                signal_data = vitaldb.load_case(cid, [signal_all], interval=1)
-                analyzer = SignalAnalyzer(
-                    caseid=cid,
-                    data=signal_data,
-                    variable_names=[signal_all],
-                    global_medians=st.session_state["global_medians"],
-                    global_mads=st.session_state["global_mads"],
-                    plot=False
-                )
-                analyzer.analyze()
-                signal = signal_data[:, 0]
-                label_vector = np.zeros(len(signal))
-                for idx in analyzer.issues[signal_all]['nan'] + \
-                           analyzer.issues[signal_all]['outlier'] + \
-                           analyzer.issues[signal_all]['jump']:
-                    if idx < len(label_vector):
-                        label_vector[idx] = 1
-
-                if model_key == "rf":
-                    X, idxs = detector.extract_features(signal)
-                    y = label_vector[idxs]
-                else:
-                    X, y = detector.extract_sequences(signal, label_vector)
-
-                all_signals.append(X)
-                all_labels.append(y)
-
-            X_all = np.vstack(all_signals)
-            y_all = np.concatenate(all_labels)
+            X_all = np.vstack(X_all)
+            y_all = np.concatenate(y_all)
 
             detector.train_on_real(X_all, y_all)
             st.session_state["y_test_real_all"] = detector.y_test
             st.session_state["y_pred_real_all"] = detector.y_pred
-            st.success(" Model trained on all real cases.")
+            st.success("✅ Model trained on all real cases.")
 
     if "y_test_real_all" in st.session_state and "y_pred_real_all" in st.session_state:
-        st.subheader(" Full Real Data Evaluation Report")
+        st.subheader("📋 Full Real Data Evaluation Report")
         report_real_all = classification_report(st.session_state["y_test_real_all"], st.session_state["y_pred_real_all"], output_dict=True)
         st.write(pd.DataFrame(report_real_all).transpose())
 
@@ -1859,21 +1814,25 @@ with tabs[7]:
                     xticklabels=["Clean", "Artifact"], yticklabels=["Clean", "Artifact"])
         st.pyplot(fig_real_all)
 
-    # ارزیابی روی یک کیس خاص با نمایش مقایسه
+    # =======================
+    # 3. ارزیابی روی یک کیس خاص (با مدل آموزش‌دیده روی کل داده)
+    # =======================
     if "detector" in st.session_state:
-        st.subheader(" Final Evaluation on Specific Case")
+        st.subheader("🔎 Evaluate on Specific Case")
 
-        selected_case = st.selectbox("Choose Evaluation Case", st.session_state["valid_ids"], key="eval_case")
+        selected_case = st.selectbox("Choose Case for Evaluation", st.session_state["valid_ids"], key="eval_case")
         selected_signal = st.selectbox("Choose Signal", st.session_state["variables"], key="eval_signal")
 
-        if st.button("Evaluate ML vs Classical Detection"):
+        if st.button("Run Evaluation on Case"):
             try:
+                st.write("Comparing predictions...")
                 detector.compare_artifact_detection(
                     global_medians=st.session_state["global_medians"],
                     global_mads=st.session_state["global_mads"],
                     caseid=selected_case,
                     target_variable=selected_signal
                 )
-                st.success("Comparison completed.")
+                st.success("✅ Comparison completed.")
             except Exception as e:
-                st.error(f" Error: {e}")
+                st.error(f"❌ Error: {e}")
+
