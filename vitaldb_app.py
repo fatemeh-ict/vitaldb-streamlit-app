@@ -987,6 +987,8 @@ class MultiCaseArtifactClassifier:
             try:
                 signal, labels = self.analyze_case(cid)
                 X, y = self.extract_windows(signal, labels)
+                if X.ndim != 2 or len(X) == 0:
+                    continue
                 self.X_train.append(X)
                 self.y_train.append(y)
             except Exception as e:
