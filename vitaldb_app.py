@@ -775,6 +775,7 @@ class StatisticalTester:
         mean_corr_matrix /= np.maximum(count_matrix, 1)
         df_corr = pd.DataFrame(mean_corr_matrix, index=self.variables, columns=self.variables)
 
+        
         plt.figure(figsize=(10, 8))
         sns.heatmap(df_corr, annot=True, fmt=".2f", cmap="coolwarm", square=True, linewidths=0.5)
         plt.title("Heatmap of Signal Correlations (Imputed Data)")
@@ -1044,7 +1045,8 @@ class MultiCaseArtifactClassifier:
 
         X_test, y_test = self.X_test_casewise.get(caseid, (None, None))
         if X_test is None:
-            print(f"❌ No test data found for case {caseid}")
+            # print(f"❌ No test data found for case {caseid}")
+            st.warning(f"No test data found for case {caseid}")
             return
 
         if self.model_type == 'rf':
@@ -1052,8 +1054,11 @@ class MultiCaseArtifactClassifier:
         else:
             y_pred = (self.model.predict(X_test) > 0.5).astype("int32").flatten()
 
-        print(f"📊 Evaluation on case {caseid}")
-        print(classification_report(y_test, y_pred))
+        # print(f"📊 Evaluation on case {caseid}")
+        # print(classification_report(y_test, y_pred))
+        report = classification_report(y_test, y_pred, output_dict=True)
+        st.text(f" Evaluation on case {caseid}")
+        st.text(classification_report(y_test, y_pred))
 
         cm = confusion_matrix(y_test, y_pred)
         sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=["Clean", "Artifact"], yticklabels=["Clean", "Artifact"])
@@ -1061,7 +1066,8 @@ class MultiCaseArtifactClassifier:
         plt.xlabel("Predicted")
         plt.ylabel("True")
         plt.tight_layout()
-        plt.show()
+        st.pyplot(plt.gcf())
+        # plt.show()
 
         analyzer = SignalAnalyzer(caseid, vitaldb.load_case(caseid, ["BIS/BIS"], interval=1), ["BIS/BIS"], plot=False)
         analyzer.analyze()
@@ -1073,12 +1079,12 @@ class MultiCaseArtifactClassifier:
         classic_total = len(set(issues["nan"] + issues["outlier"] + issues["jump"]))
         ml_total = int(np.sum(y_pred))
 
-        print(f"\n SignalAnalyzer results on case {caseid}:")
-        print(f" NaNs      : {num_nan}")
-        print(f" Outliers  : {num_outlier}")
-        print(f" Jumps     : {num_jump}")
-        print(f" Total classic artifacts (unique): {classic_total}")
-        print(f"\n ML-predicted artifacts: {ml_total} (from {len(y_pred)} total windows)")
+        st.text(f"\n SignalAnalyzer results on case {caseid}:")
+        st.text(f" NaNs      : {num_nan}")
+        st.text(f" Outliers  : {num_outlier}")
+        st.text(f" Jumps     : {num_jump}")
+        st.text(f" Total classic artifacts (unique): {classic_total}")
+        st.text(f"\n ML-predicted artifacts: {ml_total} (from {len(y_pred)} total windows)")
 
 
 
