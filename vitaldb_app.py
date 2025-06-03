@@ -850,6 +850,19 @@ class StatisticalTester:
       plt.close()
 
 
+    def run_lagged_test_one_case(self, signal_x, signal_y, caseid, max_lag=60):
+       x = self.imputed_signals[caseid][:, self.variables.index(signal_x)]
+       y = self.imputed_signals[caseid][:, self.variables.index(signal_y)]
+
+       best_lag, best_corr, correlations = self.compute_lagged_correlation(x, y, max_lag=max_lag)
+
+       df = pd.DataFrame({
+           "Lag": np.arange(0, max_lag + 1),
+           "Correlation": correlations
+       })
+
+       return best_lag, best_corr, df
+
     def compute_cross_correlation(self, x, y, max_lag=60):
       min_len = min(len(x), len(y))
       x = x[:min_len]
@@ -1483,13 +1496,14 @@ with tabs[6]:
         "Pearson correlation + T-Test (all cases)",
         "Pearson correlation + T-Test (one case)",
         "Lagged Correlation (all cases)",
+        "Lagged Correlation (one case)",
         "Cross Correlation (one case)"
     ])
 
     signal_x = st.selectbox("Signal X", st.session_state["variables"])
     signal_y = st.selectbox("Signal Y", st.session_state["variables"])
 
-    if test_type in ["Pearson correlation + T-Test (one case)", "Cross Correlation (one case)"]:
+    if test_type in ["Pearson correlation + T-Test (one case)", "Cross Correlation (one case)","Lagged Correlation (one case)"]:
         selected_case = st.selectbox("Select Case ID", st.session_state["valid_ids"])
 
     if st.button("Run Test"):
@@ -1508,10 +1522,26 @@ with tabs[6]:
                 tester.plot_heatmap()  # 📊 نمایش Heatmap همبستگی
 
 
+            # elif "Lagged" in test_type:
+            #     df_lag = tester.run_lagged_tests(signal_x=signal_x, signal_y=signal_y)
+            #     st.dataframe(df_lag)
+            #     tester.plot_lagged_summary(df_lag)
+                
             elif "Lagged" in test_type:
-                df_lag = tester.run_lagged_tests(signal_x=signal_x, signal_y=signal_y)
-                st.dataframe(df_lag)
-                tester.plot_lagged_summary(df_lag)
+              if "one case" in test_type:
+                  best_lag, best_corr, df_lag = tester.run_lagged_test_one_case(
+                      signal_x=signal_x,
+                      signal_y=signal_y,
+                      caseid=selected_case,
+                      max_lag=60
+                   )
+                  st.write(f"✅ Best lag = {best_lag} samples with correlation = {best_corr:.2f}")
+                  st.line_chart(df_lag.set_index("Lag"))
+              else:
+                 df_lag = tester.run_lagged_tests(signal_x=signal_x, signal_y=signal_y)
+                 st.dataframe(df_lag)
+                 tester.plot_lagged_summary(df_lag)
+
 
             elif "Cross" in test_type:
                 df_cross = tester.run_cross_correlation_tests(signal_x=signal_x, signal_y=signal_y)
@@ -1533,7 +1563,7 @@ with tabs[7]:
     window_size = st.slider("Window Size", min_value=10, max_value=200, value=50)
     signal_name = st.selectbox("Select signal to evaluate:", st.session_state["variables"])
 
-
+    random.seed(42)
     sample_ids = random.sample(st.session_state["valid_ids"], min(50, len(st.session_state["valid_ids"])))
     if st.button("Train ML Model"):
         try:
