@@ -1521,7 +1521,7 @@ with tabs[7]:
             clf = MultiCaseArtifactClassifier(
                 case_ids=sample_ids,
                 model_type=model_type.lower(),
-                window_size=window_size
+                window_size=window_size,
                 signal_name=signal_name
             )
             st.write("Training Cases:", clf.train_ids)
