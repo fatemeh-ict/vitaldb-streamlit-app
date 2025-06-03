@@ -778,7 +778,7 @@ class StatisticalTester:
         sns.heatmap(df_corr, annot=True, fmt=".2f", cmap="coolwarm", square=True, linewidths=0.5)
         plt.title("Heatmap of Signal Correlations (Imputed Data)")
         plt.tight_layout()
-        st.pyplot(plt.gcf())
+        st.pyplot(fig)
         # plt.savefig(f"{output_folder}/heatmap_correlations.png")
         plt.close()
         # print(" Saved heatmap.")
@@ -1486,6 +1486,8 @@ with tabs[6]:
                 st.dataframe(df_results)
                 st.success("Test completed.")
                 st.session_state["corr_results"] = df_results
+                tester.plot_heatmap()  # 📊 نمایش Heatmap همبستگی
+
 
             elif "Lagged" in test_type:
                 df_lag = tester.run_lagged_tests(signal_x=signal_x, signal_y=signal_y)
