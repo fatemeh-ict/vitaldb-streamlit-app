@@ -752,9 +752,10 @@ class StatisticalTester:
         plt.ylabel("P-Value")
         plt.title("Boxplot of P-values")
         plt.tight_layout()
-        plt.savefig(f"{output_folder}/boxplot_pvalues.png")
+        st.pyplot(plt.gcf())
+        # plt.savefig(f"{output_folder}/boxplot_pvalues.png")
         plt.close()
-        print(" Saved boxplots.")
+        # print(" Saved boxplots.")
 
     def plot_heatmap(self, output_folder="plots_statistics"):
         
@@ -778,7 +779,7 @@ class StatisticalTester:
         sns.heatmap(df_corr, annot=True, fmt=".2f", cmap="coolwarm", square=True, linewidths=0.5)
         plt.title("Heatmap of Signal Correlations (Imputed Data)")
         plt.tight_layout()
-        st.pyplot(fig)
+        st.pyplot(plt.gcf())
         # plt.savefig(f"{output_folder}/heatmap_correlations.png")
         plt.close()
         # print(" Saved heatmap.")
@@ -932,7 +933,18 @@ class MultiCaseArtifactClassifier:
         split = int(len(case_ids) * (1 - test_ratio))
         self.train_ids = case_ids[:split]
         self.test_ids = case_ids[split:]
-        self.model_type = model_type
+        self.model_type = model_type.strip().lower()
+
+        # 👇 این خط رو اضافه کن برای نگاشت ورودی کاربر به مقدار درست
+        if self.model_type in ["random forest", "rf"]:
+          self.model_type = "rf"
+        elif self.model_type in ["cnn"]:
+           self.model_type = "cnn"
+        elif self.model_type in ["lstm"]:
+           self.model_type = "lstm"
+        else:
+            raise ValueError(f"Unsupported model type: {self.model_type}")
+
         self.window_size = window_size
         self.signal_name = signal_name
         self.input_shape = (window_size, 1) if model_type != 'rf' else (window_size,)
