@@ -1503,7 +1503,8 @@ with tabs[6]:
     signal_x = st.selectbox("Signal X", st.session_state["variables"])
     signal_y = st.selectbox("Signal Y", st.session_state["variables"])
 
-    if test_type in ["Pearson correlation + T-Test (one case)", "Cross Correlation (one case)","Lagged Correlation (one case)"]:
+    # if test_type in ["Pearson correlation + T-Test (one case)", "Cross Correlation (one case)","Lagged Correlation (one case)"]:
+    if "one case" in test_type:
         selected_case = st.selectbox("Select Case ID", st.session_state["valid_ids"])
 
     if st.button("Run Test"):
