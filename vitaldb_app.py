@@ -924,20 +924,9 @@ class StatisticalTester:
 #=======================
 #Machine learning
 #=====================================
-import numpy as np
-import matplotlib.pyplot as plt
-import seaborn as sns
-import random
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import classification_report, confusion_matrix
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, Conv1D, MaxPooling1D, Flatten, LSTM
-from tensorflow.keras.optimizers import Adam
 
 class MultiCaseArtifactClassifier:
-    def __init__(self, case_ids, model_type='rf', window_size=50, test_ratio=0.2):
+    def __init__(self, case_ids, model_type='rf', window_size=50, test_ratio=0.2,signal_name="BIS/BIS"):
 
         random.shuffle(case_ids)
         split = int(len(case_ids) * (1 - test_ratio))
@@ -945,6 +934,7 @@ class MultiCaseArtifactClassifier:
         self.test_ids = case_ids[split:]
         self.model_type = model_type
         self.window_size = window_size
+        self.signal_name = signal_name
         self.input_shape = (window_size, 1) if model_type != 'rf' else (window_size,)
         self.model = None
         self.signal_name = "BIS/BIS"
@@ -1520,6 +1510,8 @@ with tabs[7]:
 
     model_type = st.selectbox("Select Model Type", ["Random Forest", "CNN", "LSTM"])
     window_size = st.slider("Window Size", min_value=10, max_value=200, value=50)
+    signal_name = st.selectbox("Select signal to evaluate:", st.session_state["variables"])
+
 
     sample_ids = random.sample(st.session_state["valid_ids"], min(50, len(st.session_state["valid_ids"])))
     if st.button("Train ML Model"):
@@ -1528,6 +1520,7 @@ with tabs[7]:
                 case_ids=sample_ids,
                 model_type=model_type.lower(),
                 window_size=window_size
+                signal_name=signal_name
             )
             st.write("Training Cases:", clf.train_ids)
             st.write("Testing Cases:", clf.test_ids)
