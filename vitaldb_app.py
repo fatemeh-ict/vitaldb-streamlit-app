@@ -936,7 +936,7 @@ class MultiCaseArtifactClassifier:
         self.test_ids = case_ids[split:]
         self.model_type = model_type.strip().lower()
 
-        # 👇 این خط رو اضافه کن برای نگاشت ورودی کاربر به مقدار درست
+        #  این خط رو اضافه کن برای نگاشت ورودی کاربر به مقدار درست
         if self.model_type in ["random forest", "rf"]:
           self.model_type = "rf"
         elif self.model_type in ["cnn"]:
@@ -950,7 +950,6 @@ class MultiCaseArtifactClassifier:
         self.signal_name = signal_name
         self.input_shape = (window_size, 1) if model_type != 'rf' else (window_size,)
         self.model = None
-        self.signal_name = "BIS/BIS"
         self.X_train, self.y_train = [], []
         self.X_test_casewise = {}  # ذخیره پنجره‌های هر تست کیس برای نمایش جداگانه
 
@@ -983,7 +982,7 @@ class MultiCaseArtifactClassifier:
         return np.array(X), np.array(y)
 
     def load_all_data(self):
-        print("📥 Loading training data...")
+        st.text(" Loading training data...")
         for cid in self.train_ids:
             try:
                 signal, labels = self.analyze_case(cid)
@@ -991,7 +990,7 @@ class MultiCaseArtifactClassifier:
                 self.X_train.append(X)
                 self.y_train.append(y)
             except Exception as e:
-                print(f"⚠️ Skipped train case {cid}: {e}")
+                print(f"Skipped train case {cid}: {e}")
 
         self.X_train = np.concatenate(self.X_train)
         self.y_train = np.concatenate(self.y_train)
@@ -999,7 +998,7 @@ class MultiCaseArtifactClassifier:
         if self.model_type != 'rf':
             self.X_train = self.X_train.reshape((self.X_train.shape[0], self.X_train.shape[1], 1))
 
-        print("📥 Loading test cases individually...")
+        st.text(" Loading test cases individually...")
         for cid in self.test_ids:
             try:
                 signal, labels = self.analyze_case(cid)
@@ -1008,7 +1007,7 @@ class MultiCaseArtifactClassifier:
                     X = X.reshape((X.shape[0], X.shape[1], 1))
                 self.X_test_casewise[cid] = (X, y)
             except Exception as e:
-                print(f"⚠️ Skipped test case {cid}: {e}")
+                st.text(f" Skipped test case {cid}: {e}")
 
     def build_model(self):
         if self.model_type == 'rf':
@@ -1034,7 +1033,7 @@ class MultiCaseArtifactClassifier:
 
     def train(self, epochs=10, batch_size=32):
         self.build_model()
-        print(f"🧠 Training model: {self.model_type.upper()}...")
+        st.text(f" Training model: {self.model_type.upper()}...")
         if self.model_type == 'rf':
             self.model.fit(self.X_train, self.y_train)
         else:
@@ -1045,7 +1044,7 @@ class MultiCaseArtifactClassifier:
 
         X_test, y_test = self.X_test_casewise.get(caseid, (None, None))
         if X_test is None:
-            # print(f"❌ No test data found for case {caseid}")
+            # print(f" No test data found for case {caseid}")
             st.warning(f"No test data found for case {caseid}")
             return
 
@@ -1054,7 +1053,7 @@ class MultiCaseArtifactClassifier:
         else:
             y_pred = (self.model.predict(X_test) > 0.5).astype("int32").flatten()
 
-        # print(f"📊 Evaluation on case {caseid}")
+        # print(f" Evaluation on case {caseid}")
         # print(classification_report(y_test, y_pred))
         report = classification_report(y_test, y_pred, output_dict=True)
         st.text(f" Evaluation on case {caseid}")
