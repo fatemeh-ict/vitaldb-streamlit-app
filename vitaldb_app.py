@@ -1115,7 +1115,7 @@ def get_global_stats_cached(case_ids, variables, n_samples=100):
 
 # Rewriting Tab 1 with signal group selection, anesthesia type, and bolus exclusions + download buttons
 
-tabs = st.tabs([" Select Cases", " Signal Quality", " Interpolation", " Evaluation", " Export"," Analysis","Correlation & T-Test","Machine Learning Model"])
+tabs = st.tabs([" Select Cases", " Signal Quality", " Interpolation", " Evaluation", " Export"," Descriptive Statistics","Correlation & T-Test","Machine Learning Model"])
 
 with tabs[0]:
     st.header("Step 1: Select Valid Cases")
@@ -1445,7 +1445,7 @@ with tabs[4]:
 
 #==================================
 with tabs[5]:
-    st.header("Step 6: Analysis")
+    st.header("Step 6: Descriptive Statistics")
 
     # Check that the data exists.
     if "eval_stats" not in st.session_state:
